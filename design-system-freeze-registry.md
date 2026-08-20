@@ -48,6 +48,13 @@ This file is the source-of-truth registry for approved/frozen design-system laye
    - Frozen blob SHA: `8879740d6753e897cb86b270fae9cb0f32b7d859`
    - Contract: overlays exist only for temporary task context; Floating is used for menu/popover and Modal for dialog/sheet. Frozen Surface and depth remain neutral while Mineral Spectrum is used by role: Cobalt for action/selection, Teal for contextual assist, Violet for KOKI ownership/control, Ochre for warning and Critical for destructive consequence. No decorative tinted overlay surfaces, nested modals, new depth levels or glass content.
 
+9. **Feedback & Status**
+   - File: `components-feedback-status.html`
+   - Stable alias: `feedback-status.html`
+   - Status: Stable 1.0 · Frozen
+   - Frozen blob SHA: `0bd5618e16fbb58b00532c770d90fe6c94a45662`
+   - Contract: operational state and severity are separate axes. Operational vocabulary is Attention / Active / Waiting / Inactive / Completed; severity is Info / Positive / Warning / Critical. State color never silently implies severity. Persistent notices, inline validation and floating toast follow the same semantic contract; operational state changes are event-driven and motion shows only the causal delta.
+
 ## Governance
 
 - Higher layers consume frozen tokens and components; they do not redefine them.
