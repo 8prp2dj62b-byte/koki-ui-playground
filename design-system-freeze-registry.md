@@ -42,6 +42,12 @@ This file is the source-of-truth registry for approved/frozen design-system laye
    - Frozen blob SHA: `ee17b74b747a24b8eb5a2929e63dd4f2229fac54`
    - Contract: content is organized by reading task rather than backend entity: Scan for high-density operational scanning, Identify for media-assisted object recognition, Inspect for deep single-object context. Mobile is recomposed rather than shrunk. Repeated entities do not become cards by default; media must earn its place; long-form text preserves readable measure; status and KOKI intelligence remain separate layers.
 
+8. **Overlays & Temporary Context**
+   - File: `components-overlays.html`
+   - Status: Stable 1.0 · Frozen
+   - Frozen blob SHA: `8879740d6753e897cb86b270fae9cb0f32b7d859`
+   - Contract: overlays exist only for temporary task context; Floating is used for menu/popover and Modal for dialog/sheet. Frozen Surface and depth remain neutral while Mineral Spectrum is used by role: Cobalt for action/selection, Teal for contextual assist, Violet for KOKI ownership/control, Ochre for warning and Critical for destructive consequence. No decorative tinted overlay surfaces, nested modals, new depth levels or glass content.
+
 ## Governance
 
 - Higher layers consume frozen tokens and components; they do not redefine them.
