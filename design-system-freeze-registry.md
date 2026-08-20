@@ -69,6 +69,12 @@ This file is the source-of-truth registry for approved/frozen design-system laye
    - Frozen blob SHA: `a1ed822c92146819363ff2813522a9511339e4f5`
    - Contract: KOKI intelligence is expressed through Signal → Reason → Evidence → Confidence → Control. Violet identifies KOKI intelligence/ownership, Teal evidence/context, Cobalt primary action/reason, Ochre uncertainty/caution and Coral human attention/intervention. Recommendation, evidence, confidence, autonomy, agent activity, human intervention, AI question and price rating remain explicit and inspectable; no generic AI cards, sparkle/glow, mystery scores or decorative AI chrome.
 
+12. **Platform Expression**
+   - File: `platform-expression.html`
+   - Status: Stable 1.0 · Frozen
+   - Frozen blob SHA: `483ddc71176d69e03661a209a247d7110a6f3ec7`
+   - Contract: one KOKI Core Design Language with platform adapters only. iOS PWA uses safe-area handling, ≥44px targets and restrained translucency only in persistent app chrome when supported; Android PWA uses ≥48px targets and solid chrome; Desktop/Web uses the frozen sidebar/rail, pointer/hover and keyboard affordances. Platform expression may adapt chrome, safe areas, target size, input model and responsive composition, but never business meaning, navigation destinations, semantic color roles, component anatomy or information architecture. No fake UIKit, fake Material, fake native controls or platform-specific product forks.
+
 ## Governance
 
 - Higher layers consume frozen tokens and components; they do not redefine them.
