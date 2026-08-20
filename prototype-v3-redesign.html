@@ -24,7 +24,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#EEF1F5}ifr
  .btn,.back,.tab,.chip{overflow:visible;text-overflow:clip}
  .tabs,.chips{max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain;scrollbar-width:thin;-webkit-overflow-scrolling:touch}
  .tabs{gap:var(--sp4)}.chips{gap:var(--sp2)}
- .tab,.chip{flex:0 0 auto;white-space:nowrap}
+ .tab,.chip{flex:0 0 auto;white-space:nowrap}.chip{min-height:44px}
  .row-btn,.row{grid-template-columns:52px minmax(0,1fr) minmax(max-content,auto);column-gap:var(--sp3)}
  .row-btn>span:nth-child(2),.row>span:nth-child(2){min-width:0}
  .title,.meta{overflow-wrap:anywhere}.title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
@@ -90,8 +90,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#EEF1F5}ifr
    d.querySelectorAll('.icon-btn').forEach(b=>{if(!b.getAttribute('aria-label'))b.setAttribute('aria-label','Действие')});
    d.querySelectorAll('.mobile-nav button').forEach(b=>{const key=b.dataset.nav;const names={dashboard:'Dashboard',buy:'Купува',sell:'Продава','new-sale':'Нова продажба',profile:'Профил'};if(key&&names[key])b.setAttribute('aria-label',names[key])});
    const login=d.querySelector('#login .secure span');if(login)login.textContent='Защитена сесия · passkey или парола';
-   // Prototype stays dummy; production/staging API contract is tested separately.
-   w.__KOKI_V3_REDIRECTION__={version:'3.1',frozenFlows:true,labelCollisionGuard:true,stageLabels:true};
+   w.__KOKI_V3_REDIRECTION__={version:'3.1',frozenFlows:true,labelCollisionGuard:true,stageLabels:true,touchTargets:true};
  }
  frame.addEventListener('load',patch);setTimeout(patch,800);
 })();
