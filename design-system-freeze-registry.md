@@ -55,6 +55,13 @@ This file is the source-of-truth registry for approved/frozen design-system laye
    - Frozen blob SHA: `0bd5618e16fbb58b00532c770d90fe6c94a45662`
    - Contract: operational state and severity are separate axes. Operational vocabulary is Attention / Active / Waiting / Inactive / Completed; severity is Info / Positive / Warning / Critical. State color never silently implies severity. Persistent notices, inline validation and floating toast follow the same semantic contract; operational state changes are event-driven and motion shows only the causal delta.
 
+10. **Selection & Actions**
+   - File: `components-selection-actions-v3.html`
+   - Stable alias: `selection-actions.html`
+   - Status: Stable 1.0 · Frozen
+   - Frozen blob SHA: `a261aff32e85bf8b9f3387b9acafd0403aba4de5`
+   - Contract: selection is an explicit temporary task mode. Multi-select uses native checkbox state so row selection remains functional independently of enhancement JavaScript; JavaScript only synchronizes count, select-all and action enablement. Browse mode stays free of checkbox chrome. Cobalt is reserved for selection/primary action, Teal for contextual utility, Violet for KOKI delegation/ownership, Ochre for reversible operational change and Critical for destructive consequence. Selection never implies destructive consent.
+
 ## Governance
 
 - Higher layers consume frozen tokens and components; they do not redefine them.
