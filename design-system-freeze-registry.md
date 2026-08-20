@@ -30,6 +30,12 @@ This file is the source-of-truth registry for approved/frozen design-system laye
    - Frozen blob SHA at approval: `246a6a8f456e117b935268fea6f6efce55252b88`
    - Contract: buttons, icon buttons, text fields, search/select, checkbox/radio, switch, shared state vocabulary and platform adaptation. No mockup component inheritance.
 
+6. **Navigation Components**
+   - File: `components-navigation.html`
+   - Status: Stable 1.0 · Frozen
+   - Frozen blob SHA at approval: `eddae7141bd1ebac7989a16a27c91460c11b406b`
+   - Contract: Instagram-like structural navigation adapted to KOKI identity; mobile uses five fixed icon-only primary positions, desktop uses the same destinations in left sidebar and collapsible icon rail, no selected pills/background, no floating dock, create remains equal in the navigation rhythm, local tabs remain separate from primary navigation.
+
 ## Governance
 
 - Higher layers consume frozen tokens and components; they do not redefine them.
