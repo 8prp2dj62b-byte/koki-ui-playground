@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="bg">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>KOKI — Redesign v3 · Frozen Flows</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#EEF1F5}iframe{display:block;width:100%;height:100%;border:0;background:#EEF1F5}
+</style>
+</head>
+<body>
+<iframe id="app" src="./prototype-v1.html" title="KOKI Redesign v3"></iframe>
+<script>
+(()=>{
+ const frame=document.getElementById('app');
+ const STAGES=['Начало','Детайли','Пазар','Обява','Публикуване'];
+ const PATCH=`
+ /* KOKI v3 application guard layer — consumes frozen Design System, does not redefine it */
+ html,body{overflow-x:hidden}
+ .workspace,.main,.surface,.panel,.railbox,.row-list,.row-btn,.row,.title,.meta,.hero>div,.section-head>div{min-width:0}
+ .hero{flex-wrap:wrap}.hero>div:first-child{flex:1 1 420px}.hero>.actions{margin-left:auto}
+ .section-head{flex-wrap:wrap;align-items:flex-start}.section-head>span,.section-head>.back{margin-left:auto}
+ .actions{max-width:100%}.actions>.btn{max-width:100%;white-space:normal;text-align:center;overflow-wrap:anywhere}
+ .btn,.back,.tab,.chip{overflow:visible;text-overflow:clip}
+ .tabs,.chips{max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain;scrollbar-width:thin;-webkit-overflow-scrolling:touch}
+ .tabs{gap:var(--sp4)}.chips{gap:var(--sp2)}
+ .tab,.chip{flex:0 0 auto;white-space:nowrap}
+ .row-btn,.row{grid-template-columns:52px minmax(0,1fr) minmax(max-content,auto);column-gap:var(--sp3)}
+ .row-btn>span:nth-child(2),.row>span:nth-child(2){min-width:0}
+ .title,.meta{overflow-wrap:anywhere}.title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+ .price,.msg-time,.decision-copy{white-space:normal;overflow:visible;text-overflow:clip;min-width:max-content}
+ .decision-copy{max-width:190px}.decision-copy b,.decision-copy span{overflow-wrap:anywhere}
+ .trace-row{grid-template-columns:minmax(96px,110px) minmax(0,1fr)}.trace-row span{overflow-wrap:anywhere}
+ .profile-head{flex-wrap:wrap}.profile-head>div:nth-child(2){min-width:180px}.profile-head>.state{margin-left:auto}
+ .field label,.help,.rail-copy,.evidence span,.secure span{overflow-wrap:anywhere}
+ .wizard-stage-label{margin:calc(var(--sp2) * -1) 0 var(--sp6);display:flex;gap:var(--sp2);align-items:center;font-size:13px;line-height:18px;font-weight:650;color:var(--ink)}
+ .wizard-stage-label span{color:var(--ink3);font-weight:500}
+ .steps{margin-bottom:var(--sp4)}
+ .steps .step{position:relative}.steps .step[aria-current="step"]{background:var(--primary)}
+ .label-stress-note{display:none}
+ @media(max-width:720px){
+   .workspace{padding-left:var(--sp4);padding-right:var(--sp4);max-width:100%}
+   .hero{display:block}.hero>div:first-child{width:100%}.hero .actions{margin-top:var(--sp4)}
+   .section-head{align-items:flex-start}.section-head>span{width:auto;margin-left:auto;text-align:right}
+   .row-btn,.row{grid-template-columns:44px minmax(0,1fr);align-items:start;padding:var(--sp3) 0;min-height:68px}
+   .row-btn>:last-child,.row>:last-child{grid-column:2;justify-self:start;text-align:left;min-width:0;max-width:100%;margin-top:var(--sp1)}
+   .decision-row{grid-template-columns:4px 44px minmax(0,1fr)!important}
+   .decision-row .decision-copy{grid-column:3;justify-self:start;max-width:100%;min-width:0}
+   .message-row{grid-template-columns:12px 44px minmax(0,1fr)!important;align-items:start}
+   .message-row .msg-time{grid-column:3;justify-self:start;text-align:left;margin-top:var(--sp1);display:flex;align-items:center;gap:var(--sp2)}
+   .profile-group{grid-template-columns:44px minmax(0,1fr)!important;align-items:center}
+   .profile-group>:last-child{grid-column:auto;justify-self:end;margin:0}
+   .stat-grid{grid-template-columns:1fr!important}.stat{border-left:0!important;border-top:1px solid var(--border)}.stat:first-child{border-top:0}
+   .market-band{gap:var(--sp1)}
+   .compose{grid-template-columns:minmax(0,1fr)}.compose .btn{width:100%}
+   .chat-head{flex-wrap:wrap;padding-top:var(--sp3);padding-bottom:var(--sp3)}.chat-head .state{margin-left:0!important;width:100%}
+ }
+ @media(max-width:380px){
+   .workspace{padding-left:var(--sp3);padding-right:var(--sp3)}
+   h1{font-size:28px!important;line-height:34px!important}
+   .login-screen.on{padding:var(--sp3)}.login-card{padding:var(--sp4)}
+   .mobile-nav{grid-template-columns:repeat(5,minmax(0,1fr))}.mobile-nav button{min-width:0}
+   .top-actions,.mobile-utils{gap:0}
+ }
+ @media(max-width:330px){
+   .workspace{padding-left:var(--sp2);padding-right:var(--sp2)}
+   .login-card{padding:var(--sp3)}
+ }
+ @media(min-width:721px) and (max-width:1100px){
+   .decision-row{grid-template-columns:4px 52px minmax(0,1fr)}.decision-copy{grid-column:3;text-align:left;max-width:none;min-width:0}
+   .message-row{grid-template-columns:12px 44px minmax(0,1fr)}.message-row .msg-time{grid-column:3;text-align:left}
+ }
+ @media (forced-colors:active){.decision-rail,.state:before,.msg-dot{forced-color-adjust:auto}}
+ `;
+ function patch(){
+   const d=frame.contentDocument,w=frame.contentWindow;if(!d||!w)return;
+   if(d.getElementById('kokiV3Guard'))return;
+   const s=d.createElement('style');s.id='kokiV3Guard';s.textContent=PATCH;d.head.appendChild(s);
+   const steps=d.querySelector('#new-sale .steps');
+   if(steps){
+     const label=d.createElement('div');label.className='wizard-stage-label';label.id='wizardStageLabel';steps.insertAdjacentElement('afterend',label);
+     const sync=()=>{
+       const current=[...d.querySelectorAll('#new-sale .wizard-stage')].findIndex(x=>x.classList.contains('on'));
+       const i=current<0?0:current;
+       label.innerHTML=`<strong>${STAGES[i]}</strong><span>Стъпка ${i+1} от ${STAGES.length}</span>`;
+       [...d.querySelectorAll('#new-sale .step')].forEach((x,n)=>{x.setAttribute('aria-label',STAGES[n]);if(n===i)x.setAttribute('aria-current','step');else x.removeAttribute('aria-current')});
+     };
+     new MutationObserver(sync).observe(d.querySelector('#new-sale'),{subtree:true,attributes:true,attributeFilter:['class']});sync();
+   }
+   d.querySelectorAll('.icon-btn').forEach(b=>{if(!b.getAttribute('aria-label'))b.setAttribute('aria-label','Действие')});
+   d.querySelectorAll('.mobile-nav button').forEach(b=>{const key=b.dataset.nav;const names={dashboard:'Dashboard',buy:'Купува',sell:'Продава','new-sale':'Нова продажба',profile:'Профил'};if(key&&names[key])b.setAttribute('aria-label',names[key])});
+   const login=d.querySelector('#login .secure span');if(login)login.textContent='Защитена сесия · passkey или парола';
+   // Prototype stays dummy; production/staging API contract is tested separately.
+   w.__KOKI_V3_REDIRECTION__={version:'3.1',frozenFlows:true,labelCollisionGuard:true,stageLabels:true};
+ }
+ frame.addEventListener('load',patch);setTimeout(patch,800);
+})();
+</script>
+</body>
+</html>
