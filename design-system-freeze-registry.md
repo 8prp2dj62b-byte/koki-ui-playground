@@ -36,6 +36,12 @@ This file is the source-of-truth registry for approved/frozen design-system laye
    - Frozen blob SHA at approval: `eddae7141bd1ebac7989a16a27c91460c11b406b`
    - Contract: Instagram-like structural navigation adapted to KOKI identity; mobile uses five fixed icon-only primary positions, desktop uses the same destinations in left sidebar and collapsible icon rail, no selected pills/background, no floating dock, create remains equal in the navigation rhythm, local tabs remain separate from primary navigation.
 
+7. **KOKI Content System**
+   - File: `components-content-lists.html`
+   - Status: Stable 1.0 · Frozen
+   - Frozen blob SHA: `ee17b74b747a24b8eb5a2929e63dd4f2229fac54`
+   - Contract: content is organized by reading task rather than backend entity: Scan for high-density operational scanning, Identify for media-assisted object recognition, Inspect for deep single-object context. Mobile is recomposed rather than shrunk. Repeated entities do not become cards by default; media must earn its place; long-form text preserves readable measure; status and KOKI intelligence remain separate layers.
+
 ## Governance
 
 - Higher layers consume frozen tokens and components; they do not redefine them.
