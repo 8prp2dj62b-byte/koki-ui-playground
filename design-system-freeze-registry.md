@@ -62,6 +62,13 @@ This file is the source-of-truth registry for approved/frozen design-system laye
    - Frozen blob SHA: `a261aff32e85bf8b9f3387b9acafd0403aba4de5`
    - Contract: selection is an explicit temporary task mode. Multi-select uses native checkbox state so row selection remains functional independently of enhancement JavaScript; JavaScript only synchronizes count, select-all and action enablement. Browse mode stays free of checkbox chrome. Cobalt is reserved for selection/primary action, Teal for contextual utility, Violet for KOKI delegation/ownership, Ochre for reversible operational change and Critical for destructive consequence. Selection never implies destructive consent.
 
+11. **KOKI Intelligence Components**
+   - File: `components-koki-intelligence.html`
+   - Stable alias: `koki-intelligence.html`
+   - Status: Stable 1.0 · Frozen
+   - Frozen blob SHA: `a1ed822c92146819363ff2813522a9511339e4f5`
+   - Contract: KOKI intelligence is expressed through Signal → Reason → Evidence → Confidence → Control. Violet identifies KOKI intelligence/ownership, Teal evidence/context, Cobalt primary action/reason, Ochre uncertainty/caution and Coral human attention/intervention. Recommendation, evidence, confidence, autonomy, agent activity, human intervention, AI question and price rating remain explicit and inspectable; no generic AI cards, sparkle/glow, mystery scores or decorative AI chrome.
+
 ## Governance
 
 - Higher layers consume frozen tokens and components; they do not redefine them.
