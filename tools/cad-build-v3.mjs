@@ -1,0 +1,14 @@
+import path from 'node:path';
+import { LibreDwg, Dwg_File_Type } from '@mlightcad/libredwg-web';
+const SOURCE_URL='https://at.adobe.com/xvBYzpWVu1Glq0cC', SB='https://aqhdzfsspmuvadnlchvj.supabase.co', KEY='sb_publishable_WJ_rzmuZWm6fvNep3cUMlw_LD86ncn9', JOB='cad_15_axo_220826_v3';
+const headers={apikey:KEY,authorization:`Bearer ${KEY}`,'content-type':'application/json',prefer:'return=minimal'};
+const p=v=>v&&typeof v==='object'?{x:v.x??v[0]??null,y:v.y??v[1]??null,z:v.z??v[2]??null}:null;
+const vs=v=>Array.isArray(v)?v.slice(0,10000).map(p):null;
+async function ins(t,r){const x=await fetch(`${SB}/rest/v1/${t}`,{method:'POST',headers,body:JSON.stringify(r)});if(!x.ok)throw new Error(`${t} ${x.status} ${await x.text()}`)}
+const fr=await fetch(SOURCE_URL); if(!fr.ok)throw new Error(`download ${fr.status}`); const ab=await fr.arrayBuffer();
+const lib=await LibreDwg.create(path.join(process.cwd(),'node_modules','@mlightcad','libredwg-web','wasm')+path.sep); const ptr=lib.dwg_read_data(ab,Dwg_File_Type.DWG); if(!ptr)throw new Error('read null');
+const db=lib.convert(ptr); const rawEntities=Array.isArray(db?.entities)?db.entities:[]; const rows=[], typeCounts={};
+for(const e of rawEntities){const type=String(e?.type??e?.objectType??e?.constructor?.name??'UNKNOWN');typeCounts[type]=(typeCounts[type]??0)+1;const layer=e?.layer?.name??e?.layerName??e?.layer??e?.common?.layer??null;const text=e?.text??e?.textValue??e?.string??e?.plainText??e?.contents??e?.value??null;rows.push({job_id:JOB,block_name:e?.owner?.name??null,entity_type:type,layer_name:typeof layer==='string'?layer:JSON.stringify(layer),text_value:text==null?null:String(text),geom:{start:p(e?.startPoint??e?.start),end:p(e?.endPoint??e?.end),center:p(e?.center),radius:e?.radius??null,length:e?.length??null,vertices:vs(e?.vertices??e?.points),insertionPoint:p(e?.insertionPoint??e?.insert),blockName:e?.blockName??e?.name??null,rotation:e?.rotation??null,scale:e?.scale??null,keys:Object.keys(e??{}).slice(0,180)}})}
+for(let i=0;i<rows.length;i+=250)await ins('_tmp_cad_entity_220826',rows.slice(i,i+250));
+const tdiag={};for(const k of Object.keys(db?.tables??{})){const v=db.tables[k];tdiag[k]={isArray:Array.isArray(v),len:Array.isArray(v)?v.length:null,keys:v&&typeof v==='object'?Object.keys(v).slice(0,80):[],sample:Array.isArray(v)&&v.length?{keys:Object.keys(v[0]??{}),name:v[0]?.name??null}:null}}
+await ins('_tmp_cad_meta_220826',[{job_id:JOB,payload:{sourceBytes:ab.byteLength,version:lib.dwg_get_version_type(ptr),codepage:lib.dwg_get_codepage(ptr),dbKeys:Object.keys(db??{}),entitiesIsArray:Array.isArray(db?.entities),entityCount:rawEntities.length,typeCounts,tableDiag:tdiag,objectsIsArray:Array.isArray(db?.objects),objectCount:Array.isArray(db?.objects)?db.objects.length:null,classCount:Array.isArray(db?.classes)?db.classes.length:null}}]);lib.dwg_free(ptr);console.log(`CAD_V3_OK entities=${rows.length}`);
