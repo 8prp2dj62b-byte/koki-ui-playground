@@ -1,4 +1,4 @@
 {
-  "buildCommand": "node tools/cad-build.mjs",
+  "buildCommand": "node tools/cad-build-v2.mjs",
   "outputDirectory": "."
 }
