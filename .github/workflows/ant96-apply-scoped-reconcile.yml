@@ -1,0 +1,116 @@
+name: ANT96 apply scoped deleted-listing reconcile
+
+on:
+  push:
+    branches:
+      - ant-96-olx-deleted-listing-reconcile
+    paths:
+      - .github/workflows/ant96-apply-scoped-reconcile.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ant-96-olx-deleted-listing-reconcile
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply only ANT-96 reconciliation change
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('supabase/functions/koki-takeover/index.ts')
+          s = p.read_text()
+          marker = "KOKI_OLX_DELETED_LISTING_RECONCILE_V1"
+          if marker not in s:
+              anchor = "async function runtime(accountId:string){"
+              assert anchor in s, 'runtime anchor missing'
+              helper = r'''const LISTING_RECONCILE_CONTRACT='KOKI_OLX_DELETED_LISTING_RECONCILE_V1',LISTING_RECONCILE_MS=300000;
+function listingAdvertId(v:any){for(const x of[v?.advert_id,v?.olx_advert_id,v?.external_advert_id,v?.olx_id,v?.advert?.id,v?.olx?.advert_id,v?.metadata?.advert_id,v?.listing_context?.advert_id,v?.context?.advert_id,v?.published_evidence?.id,v?.published_evidence?.advert_id]){const n=Number(x);if(Number.isFinite(n)&&n>0)return n}return null}
+function listingLifecycleKey(v:any){for(const k of['metadata','listing_context','context','state_context','olx_context','provenance'])if(v&&Object.prototype.hasOwnProperty.call(v,k))return k;return null}
+function listingLifecycle(v:any){const k=listingLifecycleKey(v);return(k&&v?.[k]&&typeof v[k]==='object'&&v[k].external_lifecycle)||{}}
+function lifecycleEvent(lc:any,type:string,extra:any={}){const ev={type,at:iso(),...extra},events=[...(Array.isArray(lc?.events)?lc.events:[]),ev].slice(-20);return{...(lc||{}),events}}
+function remoteListingState(ad:any){const raw=String(ad?.status?.name||ad?.status||ad?.state||ad?.advert_status||'').toLowerCase();return['inactive','archived','expired','closed','removed','disabled'].some(x=>raw.includes(x))?'INACTIVE':'ACTIVE'}
+function listingPatch(row:any,lc:any,status?:'ACTIVE'|'INACTIVE'){const p:any={},k=listingLifecycleKey(row);if(k)p[k]={...(row[k]||{}),external_lifecycle:lc};if(status&&Object.prototype.hasOwnProperty.call(row,'status'))p.status=status;if(Object.prototype.hasOwnProperty.call(row,'is_active')&&status)p.is_active=status==='ACTIVE';if(Object.prototype.hasOwnProperty.call(row,'active')&&status)p.active=status==='ACTIVE';if(Object.prototype.hasOwnProperty.call(row,'updated_at'))p.updated_at=iso();return p}
+async function writeListing(row:any,lc:any,status?:'ACTIVE'|'INACTIVE'){const patch=listingPatch(row,lc,status);if(!Object.keys(patch).length)return{applied:false,row:null};let path=`koki_sell_listings?id=eq.${encodeURIComponent(row.id)}`;const changing=!!status&&Object.prototype.hasOwnProperty.call(row,'status')&&row.status!=null&&String(row.status)!==status;if(changing)path+=`&status=eq.${encodeURIComponent(String(row.status))}`;const r=await supa(path,{method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify(patch)});if(!r.ok)return{applied:false,row:null};const rows=await r.json().catch(()=>[]);return{applied:changing?Array.isArray(rows)&&rows.length>0:true,row:Array.isArray(rows)?rows[0]||null:null}}
+async function ownListingInventory(accountId:string){const items:any[]=[];for(let offset=0;offset<2000;offset+=100){let x:any;try{x=await olx(accountId,`/adverts?limit=100&offset=${offset}`)}catch(e){return{ok:false,status:0,error:String((e as any)?.message||e),items:[]}}if(!x.response.ok)return{ok:false,status:x.response.status,error:`inventory_${x.response.status}`,items:[]};const j=await x.response.json().catch(()=>null);let page:any[]|null=null;if(Array.isArray(j))page=j;else if(Array.isArray(j?.data))page=j.data;else if(Array.isArray(j?.adverts))page=j.adverts;else if(Array.isArray(j?.data?.adverts))page=j.data.adverts;if(page===null)return{ok:false,status:x.response.status,error:'inventory_invalid_shape',items:[]};items.push(...page);if(page.length<100)return{ok:true,status:200,error:null,items}}return{ok:true,status:200,error:null,items}}
+function listingBelongs(row:any,sales:any[],account:any){const aid=String(account.id),pid=String(account.owner_profile_id||''),direct=String(row?.olx_account_id||row?.account_id||row?.metadata?.olx_account_id||row?.listing_context?.olx_account_id||'');if(direct)return direct===aid;const rp=String(row?.owner_profile_id||row?.profile_id||row?.metadata?.owner_profile_id||'');if(rp&&pid)return rp===pid;const sid=String(row?.sale_id||row?.sell_sale_id||'');if(!sid)return false;const sale=sales.find((x:any)=>String(x?.id)===sid);if(!sale)return false;const sa=String(sale?.olx_account_id||sale?.account_id||sale?.metadata?.olx_account_id||'');if(sa)return sa===aid;const sp=String(sale?.owner_profile_id||sale?.profile_id||'');return!!pid&&sp===pid}
+async function pauseListingAutomation(accountId:string,advertId:number,state:'INACTIVE'|'DELETED_EXTERNAL',at:string){const rr=await supa(`koki_olx_thread_runtime?olx_account_id=eq.${encodeURIComponent(accountId)}&domain=eq.SELL&select=thread_id,domain,runtime_mode,metadata`);if(!rr.ok)return[];const rows=(await rr.json().catch(()=>[]))||[],matched=rows.filter((r:any)=>Number(r?.metadata?.advert_id||r?.metadata?.external_advert_id||0)===advertId),tids:number[]=[];for(const r of matched){const tid=Number(r.thread_id);if(Number.isFinite(tid))tids.push(tid);await supa(`koki_olx_thread_runtime?olx_account_id=eq.${encodeURIComponent(accountId)}&thread_id=eq.${tid}`,{method:'PATCH',body:JSON.stringify({domain:'SELL',runtime_mode:'SLEEPING',next_reconcile_at:null,metadata:{...(r.metadata||{}),external_listing_state:state,external_advert_id:advertId,external_listing_changed_at:at},updated_at:at})}).catch(()=>{})}if(tids.length){const cr=await supa(`koki_sell_conversations?thread_id=in.(${tids.join(',')})&select=id,thread_id,buyer_intelligence,control_owner`);if(cr.ok){for(const c of(await cr.json().catch(()=>[]))||[])await supa(`koki_sell_conversations?id=eq.${encodeURIComponent(c.id)}`,{method:'PATCH',body:JSON.stringify({control_owner:'PAUSED',buyer_intelligence:{...(c.buyer_intelligence||{}),external_listing_state:state,external_advert_id:advertId,external_listing_changed_at:at},updated_at:at})}).catch(()=>{})}}return tids}
+async function notifyDeletedListing(account:any,key:string,row:any,advertId:number,at:string){if(!account?.owner_profile_id||!key)return;const u=Deno.env.get('SUPABASE_URL')!,payload={recipient_profile_id:account.owner_profile_id,profile_id:account.owner_profile_id,event_type:'OLX_LISTING_DELETED',type:'OLX_LISTING_DELETED',title:'Обявата е премахната от OLX',body:'KOKI спря автоматизацията и премести обявата в историята.',dedupe_key:`olx-listing-deleted:${account.id}:${advertId}`,data:{advert_id:advertId,listing_id:row.id,external_state:'DELETED_EXTERNAL',deleted_at:at}};await fetch(`${u}/functions/v1/koki-push-service`,{method:'POST',headers:{'Content-Type':'application/json','x-koki-worker':key},body:JSON.stringify(payload),signal:AbortSignal.timeout(10000)}).catch(()=>null)}
+async function reconcileOwnListings(account:any,key:string,cfg:any){const last=Date.parse(String(cfg?.last_full_reconcile_at||''));if(Number.isFinite(last)&&Date.now()-last<LISTING_RECONCILE_MS)return{contract:LISTING_RECONCILE_CONTRACT,status:'NOT_DUE'};const [lr,sr]=await Promise.all([supa('koki_sell_listings?select=*'),supa('koki_sell_sales?select=*')]);if(!lr.ok)return{contract:LISTING_RECONCILE_CONTRACT,status:'LISTING_READ_FAILED'};const listings=(await lr.json().catch(()=>[]))||[],sales=sr.ok?((await sr.json().catch(()=>[]))||[]):[],owned=listings.filter((r:any)=>listingAdvertId(r)&&listingBelongs(r,sales,account)&&(!['INACTIVE','COMPLETED','SOLD','ARCHIVED','DELETED'].includes(String(r?.status||'').toUpperCase())||listingLifecycle(r).state==='DELETED_EXTERNAL'));if(!owned.length){await supa(`koki_olx_account_runtime?olx_account_id=eq.${encodeURIComponent(account.id)}`,{method:'PATCH',body:JSON.stringify({last_full_reconcile_at:iso(),updated_at:iso()})}).catch(()=>{});return{contract:LISTING_RECONCILE_CONTRACT,status:'NO_LISTINGS',checked:0}}const inventory=await ownListingInventory(String(account.id)),attemptedAt=iso();await supa(`koki_olx_account_runtime?olx_account_id=eq.${encodeURIComponent(account.id)}`,{method:'PATCH',body:JSON.stringify({last_full_reconcile_at:attemptedAt,updated_at:attemptedAt})}).catch(()=>{});if(!inventory.ok)return{contract:LISTING_RECONCILE_CONTRACT,status:'INVENTORY_FAILED',error:inventory.error,checked:0};const live=new Set<number>((inventory.items||[]).map((x:any)=>Number(x?.id||x?.advert_id||0)).filter((x:number)=>Number.isFinite(x)&&x>0)),out:any[]=[];for(const row of owned){const advertId=listingAdvertId(row)!;let prev=listingLifecycle(row);if(live.has(advertId)){if(prev.state==='DELETED_EXTERNAL'){let v:any;try{v=await olx(String(account.id),`/adverts/${advertId}`)}catch(e){out.push({advert_id:advertId,state:'DELETED_EXTERNAL',reason:'reactivation_verify_failed'});continue}if(v.response.ok){const j=await v.response.json().catch(()=>({})),ad=j?.data??j;if(remoteListingState(ad)==='ACTIVE'){let lc=lifecycleEvent({...prev,state:'ACTIVE',missing_count:0,external_last_seen_at:attemptedAt,external_last_verified_at:attemptedAt,external_deleted_at:null,reason:'OLX_REAPPEARED_VERIFIED',source:'OLX_DIRECT_VERIFY'},'OLX_LISTING_REACTIVATED',{advert_id:advertId});const wr=await writeListing(row,lc,'ACTIVE');out.push({advert_id:advertId,state:'ACTIVE',reactivated:wr.applied});continue}}out.push({advert_id:advertId,state:'DELETED_EXTERNAL',reason:'reactivation_not_verified'});continue}if(prev.state==='UNKNOWN_EXTERNAL_STATE'||Number(prev.missing_count||0)>0){const lc={...prev,state:'ACTIVE',missing_count:0,external_last_seen_at:attemptedAt,external_last_verified_at:attemptedAt,reason:'PRESENT_IN_OLX_INVENTORY',source:'OLX_INVENTORY'};await writeListing(row,lc);out.push({advert_id:advertId,state:'ACTIVE'})}continue}const missingCount=Number(prev.missing_count||0)+1,firstMissing=prev.first_missing_at||attemptedAt;let lc=lifecycleEvent({...prev,state:'UNKNOWN_EXTERNAL_STATE',missing_count:missingCount,first_missing_at:firstMissing,last_inventory_reconcile_at:attemptedAt,reason:'MISSING_FROM_SUCCESSFUL_INVENTORY',source:'OLX_INVENTORY'},'OLX_LISTING_MISSING',{advert_id:advertId,missing_count:missingCount});let v:any=null,verifyError:string|null=null;try{v=await olx(String(account.id),`/adverts/${advertId}`)}catch(e){verifyError=String((e as any)?.message||e)}if(v?.response?.status===404){const deletedAt=iso(),priorState=prev.state;lc=lifecycleEvent({...lc,state:'DELETED_EXTERNAL',external_deleted_at:deletedAt,external_last_verified_at:deletedAt,reason:'OLX_404_NOT_FOUND',source:'OLX_DIRECT_VERIFY'},'OLX_LISTING_DELETED',{advert_id:advertId});const wr=await writeListing(row,lc,'INACTIVE');if(wr.applied&&priorState!=='DELETED_EXTERNAL'){const tids=await pauseListingAutomation(String(account.id),advertId,'DELETED_EXTERNAL',deletedAt);await notifyDeletedListing(account,key,row,advertId,deletedAt);out.push({advert_id:advertId,state:'DELETED_EXTERNAL',threads_paused:tids.length})}else out.push({advert_id:advertId,state:'DELETED_EXTERNAL',idempotent:true});continue}if(v?.response?.ok){const j=await v.response.json().catch(()=>({})),ad=j?.data??j,state=remoteListingState(ad),verifiedAt=iso();if(state==='INACTIVE'){lc=lifecycleEvent({...lc,state:'INACTIVE',external_last_verified_at:verifiedAt,reason:'OLX_EXPLICIT_INACTIVE',source:'OLX_DIRECT_VERIFY'},'OLX_LISTING_INACTIVE',{advert_id:advertId});const wr=await writeListing(row,lc,'INACTIVE');if(wr.applied)await pauseListingAutomation(String(account.id),advertId,'INACTIVE',verifiedAt);out.push({advert_id:advertId,state:'INACTIVE'});continue}lc={...lc,state:'ACTIVE',missing_count:0,external_last_seen_at:verifiedAt,external_last_verified_at:verifiedAt,reason:'OLX_DIRECT_VERIFY_ACTIVE',source:'OLX_DIRECT_VERIFY'};await writeListing(row,lc);out.push({advert_id:advertId,state:'ACTIVE',reason:'inventory_eventual_consistency'});continue}lc=lifecycleEvent({...lc,state:'UNKNOWN_EXTERNAL_STATE',external_last_verified_at:iso(),reason:verifyError||`OLX_VERIFY_${v?.response?.status||0}`,source:'OLX_DIRECT_VERIFY'},'OLX_LISTING_VERIFY_FAILED',{advert_id:advertId,status:v?.response?.status||0});await writeListing(row,lc);out.push({advert_id:advertId,state:'UNKNOWN_EXTERNAL_STATE'})}return{contract:LISTING_RECONCILE_CONTRACT,status:'OK',checked:owned.length,results:out}}
+'''
+              s = s.replace(anchor, helper + '\n' + anchor, 1)
+              scan_anchor = "if(myId!==Number(account.olx_user_id))throw Error('olx_account_identity_mismatch');const threadsRaw="
+              assert scan_anchor in s, 'scan anchor missing'
+              s = s.replace(scan_anchor, "if(myId!==Number(account.olx_user_id))throw Error('olx_account_identity_mismatch');await reconcileOwnListings(account,key,cfg).catch(()=>null);const threadsRaw=", 1)
+              p.write_text(s)
+
+          test = r'''import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+function decide({inventoryOk,present,verifyStatus,remoteState}){
+  if(!inventoryOk)return 'NO_CHANGE';
+  if(present)return 'ACTIVE';
+  if(verifyStatus===404)return 'DELETED_EXTERNAL';
+  if(verifyStatus===200&&remoteState==='INACTIVE')return 'INACTIVE';
+  if(verifyStatus===200)return 'ACTIVE';
+  return 'UNKNOWN_EXTERNAL_STATE';
+}
+
+assert.equal(decide({inventoryOk:true,present:true,verifyStatus:null,remoteState:null}),'ACTIVE');
+assert.equal(decide({inventoryOk:false,present:false,verifyStatus:404,remoteState:null}),'NO_CHANGE');
+assert.equal(decide({inventoryOk:true,present:false,verifyStatus:404,remoteState:null}),'DELETED_EXTERNAL');
+assert.equal(decide({inventoryOk:true,present:false,verifyStatus:500,remoteState:null}),'UNKNOWN_EXTERNAL_STATE');
+assert.equal(decide({inventoryOk:true,present:false,verifyStatus:429,remoteState:null}),'UNKNOWN_EXTERNAL_STATE');
+assert.equal(decide({inventoryOk:true,present:false,verifyStatus:0,remoteState:null}),'UNKNOWN_EXTERNAL_STATE');
+assert.equal(decide({inventoryOk:true,present:false,verifyStatus:200,remoteState:'ACTIVE'}),'ACTIVE');
+assert.equal(decide({inventoryOk:true,present:false,verifyStatus:200,remoteState:'INACTIVE'}),'INACTIVE');
+
+const src=fs.readFileSync('supabase/functions/koki-takeover/index.ts','utf8');
+assert.match(src,/KOKI_OLX_DELETED_LISTING_RECONCILE_V1/);
+assert.match(src,/async function ownListingInventory/);
+assert.match(src,/if\(!inventory\.ok\)return\{contract:LISTING_RECONCILE_CONTRACT,status:'INVENTORY_FAILED'/);
+assert.match(src,/response\?\.status===404/);
+assert.match(src,/state:'DELETED_EXTERNAL'/);
+assert.match(src,/writeListing\(row,lc,'INACTIVE'\)/);
+assert.match(src,/runtime_mode:'SLEEPING'/);
+assert.match(src,/domain:'SELL'/);
+assert.match(src,/control_owner:'PAUSED'/);
+assert.match(src,/OLX_LISTING_DELETED/);
+assert.match(src,/dedupe_key:`olx-listing-deleted:/);
+assert.match(src,/priorState!==\'DELETED_EXTERNAL\'/);
+assert.match(src,/OLX_LISTING_REACTIVATED/);
+assert.match(src,/listingLifecycle\(r\)\.state==='DELETED_EXTERNAL'/);
+assert.doesNotMatch(src,/koki_sell_listings[^\n]*method:'DELETE'/);
+assert.doesNotMatch(src,/Gemini|GEMINI/);
+assert.match(src,/await reconcileOwnListings\(account,key,cfg\)\.catch\(\(\)=>null\)/);
+console.log('ANT-96 PASS: 25 assertions');
+'''
+          Path('tests/ant96-olx-deleted-listing-reconcile.test.mjs').write_text(test)
+          PY
+      - name: ANT-96 unit and source contract
+        run: node tests/ant96-olx-deleted-listing-reconcile.test.mjs
+      - name: Protected ANT-95 regression
+        run: node tests/ant95-koki-takeover-contract.test.mjs
+      - name: Protected ANT-94 core regression
+        run: node tests/ant94-v66-core.test.mjs && node tests/ant94-v66-adversarial-regression.test.mjs
+      - name: Commit scoped implementation
+        shell: bash
+        run: |
+          git config user.name "8prp2dj62b-byte"
+          git config user.email "8prp2dj62b@privaterelay.appleid.com"
+          git add supabase/functions/koki-takeover/index.ts tests/ant96-olx-deleted-listing-reconcile.test.mjs
+          if git diff --cached --quiet; then
+            echo "No scoped changes to commit"
+          else
+            git commit -m "feat(ANT-96): reconcile deleted OLX SELL listings"
+            git push origin HEAD:ant-96-olx-deleted-listing-reconcile
+          fi
