@@ -1,0 +1,31 @@
+name: ANT95 production merge regression
+
+on:
+  push:
+    branches:
+      - ant-95-prod-merge
+      - stable
+    paths:
+      - supabase/functions/koki-takeover/**
+      - tests/ant95-koki-takeover-contract.test.mjs
+      - .github/workflows/ant95-prod-merge-regression.yml
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: ANT-95 classifier + source contract
+        run: node tests/ant95-koki-takeover-contract.test.mjs
+      - name: Guard current ANT-94 production sources
+        shell: bash
+        run: |
+          test -f supabase/functions/koki-command-center-staging-v28/index.ts
+          test -f supabase/functions/koki-command-center-staging-v49/index.ts
+          test -f supabase/functions/koki-command-center-staging-v50/index.ts
+          grep -q 'KOKI_NEW_SALE_BASE_SIMPLE_V1' supabase/functions/koki-command-center-staging-v28/index.ts
+          grep -q 'KOKI_GEMINI_ONLY_MARKET_V1' supabase/functions/koki-command-center-staging-v49/index.ts
+          grep -q 'KOKI_NEW_SALE_SIMPLE_V1' supabase/functions/koki-command-center-staging-v50/index.ts
