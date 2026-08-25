@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import {parseBingRss, decodeEntities} from "../koki-new-sale-v66/core.js";
+import {parseBingRss, decodeEntities} from "./core.js";
 
 const SU=Deno.env.get('SUPABASE_URL'), SK=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 const ENGINE='KOKI_MARKET_RESEARCH_V66', AI='koki-ai-turn-test-agent-staging-v3';
