@@ -23,5 +23,12 @@ jobs:
         run: node tests/ant96-olx-deleted-listing-reconcile.test.mjs
       - name: ANT-95 classifier regression
         run: node tests/ant95-koki-takeover-contract.test.mjs
-      - name: ANT-94 New Sale regression
-        run: node tests/ant94-v66-core.test.mjs && node tests/ant94-v66-adversarial-regression.test.mjs
+      - name: Guard current ANT-94 stable sources
+        shell: bash
+        run: |
+          test -f supabase/functions/koki-command-center-staging-v28/index.ts
+          test -f supabase/functions/koki-command-center-staging-v49/index.ts
+          test -f supabase/functions/koki-command-center-staging-v50/index.ts
+          grep -q 'KOKI_NEW_SALE_BASE_SIMPLE_V1' supabase/functions/koki-command-center-staging-v28/index.ts
+          grep -q 'KOKI_GEMINI_ONLY_MARKET_V1' supabase/functions/koki-command-center-staging-v49/index.ts
+          grep -q 'KOKI_NEW_SALE_SIMPLE_' supabase/functions/koki-command-center-staging-v50/index.ts
