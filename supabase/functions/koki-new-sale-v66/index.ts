@@ -3,7 +3,7 @@ import {stable,isCatalogicDescription,marketingQuality,buildOfficialPayload,revi
 declare const EdgeRuntime:any;
 
 const SU=Deno.env.get('SUPABASE_URL'), SK=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-const V28=`${SU}/functions/v1/koki-command-center-staging-v28`, MARKET=`${SU}/functions/v1/koki-market-research-v66`, AI=`${SU}/functions/v1/koki-ai-turn-test-agent-staging-v3`;
+const V28=`${SU}/functions/v1/koki-command-center-staging-v28`, MARKET=`${SU}/functions/v1/koki-command-center-staging-v49`, AI=`${SU}/functions/v1/koki-ai-turn-test-agent-staging-v3`;
 const ENGINE='KOKI_NEW_SALE_V66', CONTRACT='KOKI_NEW_SALE_V66', REVIEW='KOKI_NEW_SALE_REVIEW_V1';
 const iso=()=>new Date().toISOString(), clean=v=>String(v??'').replace(/\s+/g,' ').trim();
 const H=req=>({'Cache-Control':'no-store','Content-Type':'application/json','Access-Control-Allow-Origin':req?.headers.get('origin')||'https://koki.tonyshodling.eu','Access-Control-Allow-Headers':'authorization,content-type,apikey,x-koki-worker','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Vary':'Origin','X-KOKI-New-Sale-Contract':CONTRACT});
@@ -98,7 +98,7 @@ Deno.serve(async req=>{
   try{
     if(req.method==='OPTIONS')return new Response(null,{status:204,headers:H(req)}); const b=await req.json().catch(()=>({})),action=String(b.action||'');
     if(action==='qa'||action==='qa_unit'){
-      if(!await workerOK(req))return J({ok:false,error:'forbidden'},403,req); const u=coreUnit(); return J({ok:u.passed===u.total,engine:ENGINE,contract:CONTRACT,upstream:'koki-command-center-staging-v28',market_engine:'koki-market-research-v66',unit:u},200,req);
+      if(!await workerOK(req))return J({ok:false,error:'forbidden'},403,req); const u=coreUnit(); return J({ok:u.passed===u.total,engine:ENGINE,contract:CONTRACT,upstream:'koki-command-center-staging-v28',market_engine:'koki-command-center-staging-v49',unit:u},200,req);
     }
     if(action==='qa_finalize'){
       if(!await workerOK(req))return J({ok:false,error:'forbidden'},403,req); const d=await loadDraft(String(b.draft_id||'')); if(!d)return J({ok:false,error:'draft_not_found'},404,req); await finalizeReview(d.id); const f=await loadDraft(d.id); return J({ok:markerMatches(f),draft_id:f.id,review_version:f.review_version,payload_preview_hash:f.payload_preview_hash,research_substate:f.research_substate,market_comparison:f.market_comparison,listing_content:f.listing_content,marker:markerOf(f),external_write:false},200,req);
