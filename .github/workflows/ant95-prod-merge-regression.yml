@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - ant-95-prod-merge
+      - stable
     paths:
       - supabase/functions/koki-takeover/**
       - tests/ant95-koki-takeover-contract.test.mjs
