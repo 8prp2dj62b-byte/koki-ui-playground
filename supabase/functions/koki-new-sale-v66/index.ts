@@ -54,7 +54,8 @@ async function improveMarketing(d){
 }
 async function runMarket(id){const key=await wk(),r=await fetch(MARKET,{method:'POST',headers:{'Content-Type':'application/json','x-koki-worker':key},body:JSON.stringify({action:'research',draft_id:id}),signal:AbortSignal.timeout(150000)}),j=await r.json().catch(()=>({}));if(!r.ok||!j.ok)throw Error(j.error||`MARKET_${r.status}`);return j}
 function markerOf(d){return d?.user_edits?.v66_review_finalization||{}}
-function markerMatches(d){const m=markerOf(d);return m.state==='DONE'&&Number(m.review_version)===Number(d.review_version)&&['COMPLETED_OK','COMPLETED_INSUFFICIENT'].includes(String(d.research_substate))}
+function reviewMarket(d){return d?.review_payload?.market_comparison||null}
+function markerMatches(d){const m=markerOf(d),rm=reviewMarket(d);return m.state==='DONE'&&Number(m.review_version)===Number(d.review_version)&&['READY','INSUFFICIENT'].includes(String(rm?.state||''))}
 async function mark(d,state,extra={}){await patchDraft(d.id,{user_edits:{...(d.user_edits||{}),v66_review_finalization:{state,engine:ENGINE,at:iso(),...extra}}})}
 async function finalizeReview(id){
   let d=await loadDraft(id); if(!d)return; const startReview=Number(d.review_version||0); await mark(d,'RUNNING',{source_review_version:startReview});
@@ -65,10 +66,10 @@ async function finalizeReview(id){
     d=await loadDraft(d.id);
     const ctx=await rpc('koki_enrich_listing_location_v1',{p_draft_id:d.id});
     d=await loadDraft(d.id); const publishCtx=(ctx&&ctx.location)?ctx:d.publish_context;
-    const payload=buildOfficialPayload(d,publishCtx),ph=await sha(payload),rv=Number(d.review_version||0)+1,market=normalizeMarketForReview(d.market_comparison||{});
+    const payload=buildOfficialPayload(d,publishCtx),ph=await sha(payload),rv=Number(d.review_version||0)+1,market=normalizeMarketForReview(d.market_comparison||{}),researchSubstate=market.state==='READY'?'COMPLETED_OK':'COMPLETED_INSUFFICIENT';
     const prior=d.review_payload||{},review={...prior,contract:REVIEW,draft_id:d.id,review_version:rv,payload_preview_hash:ph,listing:{...(d.listing_content||{}),authority:d.listing_authority,content_version:Number(d.listing_content_version||0)},publish_context:publishCtx,market_comparison:market,workflow_state:'REVIEW_READY',readiness:{...(prior.readiness||{}),state:'REVIEW_READY'}};
-    const edits={...(d.user_edits||{}),v66_review_finalization:{state:'DONE',engine:ENGINE,at:iso(),source_review_version:startReview,review_version:rv,market_state:d.research_substate,marketing_source:d.listing_content?.source||null}};
-    await patchDraft(d.id,{publish_context:publishCtx,review_version:rv,review_payload:review,payload_preview_hash:ph,workflow_state:'REVIEW_READY',workflow_error:{},user_edits:edits});
+    const edits={...(d.user_edits||{}),research_authority:'KOKI_MARKET_RESEARCH_V66',v66_review_finalization:{state:'DONE',engine:ENGINE,at:iso(),source_review_version:startReview,review_version:rv,market_state:researchSubstate,marketing_source:d.listing_content?.source||null,market_snapshot_state:market.state}};
+    await patchDraft(d.id,{publish_context:publishCtx,review_version:rv,review_payload:review,payload_preview_hash:ph,workflow_state:'REVIEW_READY',workflow_error:{},research_state:'COMPLETED',research_substate:researchSubstate,market_comparison:market,user_edits:edits});
     const opId=review.operation_id||prior.operation_id; if(opId)await patchOp(opId,{review_version:rv,payload_preview_hash:ph,workflow_state:'REVIEW_READY',progress_label_bg:'Обявата е готова за преглед.',error:{},failed_stage:null});
   }catch(e){
     d=await loadDraft(id); const msg=String(e?.message||e); if(d)await patchDraft(id,{workflow_error:{code:'V66_FINALIZATION_FAILED',message:msg.slice(0,300),retryable:true},user_edits:{...(d.user_edits||{}),v66_review_finalization:{state:'FAILED_RETRYABLE',engine:ENGINE,at:iso(),source_review_version:startReview,error:msg.slice(0,220)}}});
@@ -81,17 +82,18 @@ function startFinalizeIfNeeded(d){
 }
 async function maskUntilFinal(j){
   const id=j?.draft_id||j?.draft?.id; if(!id)return j; const d=await loadDraft(id); if(!d||String(j.workflow_state||j?.operation?.workflow_state||d.workflow_state)!=='REVIEW_READY')return j;
-  const state=reviewVisibility(markerOf(d).state,d.research_substate); if(state==='REVIEW_READY'){
-    const fresh=await loadDraft(id); return {...j,workflow_state:'REVIEW_READY',progress_label_bg:'Обявата е готова за преглед.',review:fresh.review_payload,draft:j.draft?{...j.draft,review_payload:fresh.review_payload,payload_preview_hash:fresh.payload_preview_hash,review_version:fresh.review_version,research_substate:fresh.research_substate,market_comparison:fresh.market_comparison}:j.draft,research:{state:fresh.research_substate,market_comparison:fresh.market_comparison}};
+  const rm=reviewMarket(d),state=markerMatches(d)?'REVIEW_READY':reviewVisibility(markerOf(d).state,d.research_substate); if(state==='REVIEW_READY'){
+    const fresh=await loadDraft(id),market=reviewMarket(fresh)||normalizeMarketForReview(fresh.market_comparison||{}),researchState=market.state==='READY'?'COMPLETED_OK':'COMPLETED_INSUFFICIENT'; return {...j,workflow_state:'REVIEW_READY',progress_label_bg:'Обявата е готова за преглед.',review:{...(fresh.review_payload||{}),market_comparison:market},draft:j.draft?{...j.draft,review_payload:{...(fresh.review_payload||{}),market_comparison:market},payload_preview_hash:fresh.payload_preview_hash,review_version:fresh.review_version,research_substate:researchState,market_comparison:market}:j.draft,research:{state:researchState,market_comparison:market}};
   }
   if(state==='FAILED_RETRYABLE')return {...j,workflow_state:'FAILED_RETRYABLE',review:null,progress_label_bg:'Не успях да финализирам анализа. Опитай отново.',error:d.workflow_error||{code:'V66_FINALIZATION_FAILED',retryable:true}};
-  startFinalizeIfNeeded(d); return {...j,workflow_state:'GENERATING_LISTING',review:null,progress_label_bg:'Сравнявам пазара и финализирам обявата…',research:{state:d.research_substate||'NOT_STARTED',market_comparison:{}}};
+  startFinalizeIfNeeded(d); return {...j,workflow_state:'GENERATING_LISTING',review:null,progress_label_bg:'Сравнявам пазара и финализирам обявата…',research:{state:'RUNNING',market_comparison:{}}};
 }
 function coreUnit(){
   const dry='Основни характеристики:\n- Марка: Apple\n- Модел: iPhone\n- Памет: 512GB';
   const natural='Продавам използван iPhone 16 Pro с 512GB памет. Обявата е за конкретния телефон от снимките. При интерес можеш да пишеш за допълнителни въпроси преди сделката.';
   const p=buildOfficialPayload({id:'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',listing_content:{title:'T',description:'D',attributes:{}},category:{id:454},media:[],owner_desired_price_eur:500},{advertiser_type:'private',contact:{name:'Koki'},location:{city_id:8771,district_id:1393}});
-  const tests={catalog_rejected:isCatalogicDescription(dry)&&!marketingQuality(dry).valid,natural_passes:marketingQuality(natural).valid,district_in_payload:p.location.district_id===1393,review_hidden_while_running:reviewVisibility('RUNNING','RUNNING')==='FINALIZING_REVIEW',insufficient_is_terminal:reviewVisibility('DONE','COMPLETED_INSUFFICIENT')==='REVIEW_READY'};
+  const terminalReview={review_version:4,review_payload:{market_comparison:{state:'INSUFFICIENT'}},user_edits:{v66_review_finalization:{state:'DONE',review_version:4}}};
+  const tests={catalog_rejected:isCatalogicDescription(dry)&&!marketingQuality(dry).valid,natural_passes:marketingQuality(natural).valid,district_in_payload:p.location.district_id===1393,review_hidden_while_running:reviewVisibility('RUNNING','RUNNING')==='FINALIZING_REVIEW',review_snapshot_fences_legacy_running:markerMatches(terminalReview)};
   return {tests,passed:Object.values(tests).filter(Boolean).length,total:Object.keys(tests).length};
 }
 Deno.serve(async req=>{
@@ -101,7 +103,7 @@ Deno.serve(async req=>{
       if(!await workerOK(req))return J({ok:false,error:'forbidden'},403,req); const u=coreUnit(); return J({ok:u.passed===u.total,engine:ENGINE,contract:CONTRACT,upstream:'koki-command-center-staging-v28',market_engine:'koki-command-center-staging-v49',unit:u},200,req);
     }
     if(action==='qa_finalize'){
-      if(!await workerOK(req))return J({ok:false,error:'forbidden'},403,req); const d=await loadDraft(String(b.draft_id||'')); if(!d)return J({ok:false,error:'draft_not_found'},404,req); await finalizeReview(d.id); const f=await loadDraft(d.id); return J({ok:markerMatches(f),draft_id:f.id,review_version:f.review_version,payload_preview_hash:f.payload_preview_hash,research_substate:f.research_substate,market_comparison:f.market_comparison,listing_content:f.listing_content,marker:markerOf(f),external_write:false},200,req);
+      if(!await workerOK(req))return J({ok:false,error:'forbidden'},403,req); const d=await loadDraft(String(b.draft_id||'')); if(!d)return J({ok:false,error:'draft_not_found'},404,req); await finalizeReview(d.id); const f=await loadDraft(d.id),market=reviewMarket(f)||normalizeMarketForReview(f.market_comparison||{}); return J({ok:markerMatches(f),draft_id:f.id,review_version:f.review_version,payload_preview_hash:f.payload_preview_hash,research_substate:market.state==='READY'?'COMPLETED_OK':'COMPLETED_INSUFFICIENT',market_comparison:market,listing_content:f.listing_content,publish_context:f.publish_context,marker:markerOf(f),external_write:false},200,req);
     }
     if(action==='publish'){
       const vr=await proxy(req,{action:'get',draft_id:b.draft_id}); if(!vr.ok)return J(vr.data||{ok:false,error:{code:'AUTHENTICATION_REQUIRED'}},vr.status,req); const d=await loadDraft(String(b.draft_id||'')); if(!d||!markerMatches(d))return J({ok:false,error:{code:'REVIEW_FINALIZATION_REQUIRED',retryable:true},action:'RELOAD_REVIEW'},409,req);
