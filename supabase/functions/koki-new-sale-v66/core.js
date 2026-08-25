@@ -48,7 +48,7 @@ export function marketingQuality(desc=''){
   const reasons=[];
   if(s.length<90) reasons.push('DESCRIPTION_TOO_SHORT');
   if(isCatalogicDescription(s)) reasons.push('FACT_LIST_STYLE');
-  if(/като нов|перфектн|без забележк|гаранци|оригинал|100% изправ/i.test(s)) reasons.push('UNSUPPORTED_SALES_CLAIM_RISK');
+  if(/като нов|перфектн|без забележк|гаранци|оригинал|100% изправ|готов[а-я\s]*за употреба|надеждн[а-я]*\s+(?:устройство|телефон|продукт)|доказан(?:ото|о)?\s+качество/i.test(s)) reasons.push('UNSUPPORTED_SALES_CLAIM_RISK');
   return {valid:reasons.length===0,reasons};
 }
 
