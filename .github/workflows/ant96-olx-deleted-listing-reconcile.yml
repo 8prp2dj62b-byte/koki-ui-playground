@@ -1,0 +1,25 @@
+name: ANT96 deleted listing reconciliation
+
+on:
+  push:
+    branches:
+      - ant-96-olx-deleted-listing-reconcile
+      - stable
+    paths:
+      - supabase/functions/koki-takeover/index.ts
+      - supabase/functions/koki-takeover/listing_reconcile.ts
+      - tests/ant96-olx-deleted-listing-reconcile.test.mjs
+      - .github/workflows/ant96-olx-deleted-listing-reconcile.yml
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: ANT-96 lifecycle regression
+        run: node tests/ant96-olx-deleted-listing-reconcile.test.mjs
+      - name: ANT-95 classifier regression
+        run: node tests/ant95-koki-takeover-contract.test.mjs
