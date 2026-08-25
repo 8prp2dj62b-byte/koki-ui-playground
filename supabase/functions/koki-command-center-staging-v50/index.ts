@@ -1,0 +1,74 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import {stable,marketingQuality,buildOfficialPayload,optionalMarket} from "./core.js";
+declare const EdgeRuntime:any;
+
+const SU=Deno.env.get('SUPABASE_URL')!,SK=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+const V28=`${SU}/functions/v1/koki-command-center-staging-v28`,MARKET=`${SU}/functions/v1/koki-command-center-staging-v49`,AI=`${SU}/functions/v1/koki-ai-turn-test-agent-staging-v3`;
+const ENGINE='KOKI_NEW_SALE_SIMPLE_V1',CONTRACT='KOKI_NEW_SALE_SIMPLE_V1',REVIEW='KOKI_NEW_SALE_REVIEW_V1';
+const iso=()=>new Date().toISOString(),clean=(v:any)=>String(v??'').replace(/\s+/g,' ').trim();
+const H=(req?:Request)=>({'Cache-Control':'no-store','Content-Type':'application/json','Access-Control-Allow-Origin':req?.headers.get('origin')||'https://koki.tonyshodling.eu','Access-Control-Allow-Headers':'authorization,content-type,apikey,x-koki-worker','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Vary':'Origin','X-KOKI-New-Sale-Contract':CONTRACT});
+const J=(x:any,s=200,req?:Request)=>Response.json(x,{status:s,headers:H(req)});
+
+async function db(path:string,init:RequestInit={}){const h=new Headers(init.headers);h.set('apikey',SK);h.set('Authorization',`Bearer ${SK}`);if(init.body&&!h.has('Content-Type'))h.set('Content-Type','application/json');const r=await fetch(`${SU}/rest/v1/${path}`,{...init,headers:h,signal:init.signal??AbortSignal.timeout(30000)}),t=await r.text();if(!r.ok)throw Error(`db_${r.status}:${t.slice(0,500)}`);return t?JSON.parse(t):null}
+const rpc=(n:string,b:any)=>db(`rpc/${n}`,{method:'POST',body:JSON.stringify(b)});
+async function wk(){return(await db('koki_worker_config?id=eq.worker_key&select=value&limit=1'))?.[0]?.value||''}
+async function workerOK(req:Request){const key=await wk();return!!key&&req.headers.get('x-koki-worker')===key}
+const loadDraft=async(id:string)=>(await db(`koki_listing_drafts_v3?id=eq.${encodeURIComponent(id)}&select=*&limit=1`))?.[0]||null;
+const patchDraft=(id:string,p:any)=>db(`koki_listing_drafts_v3?id=eq.${id}`,{method:'PATCH',body:JSON.stringify({...p,updated_at:iso()})});
+const patchOp=(id:string,p:any)=>db(`koki_new_sale_operations_v1?id=eq.${id}`,{method:'PATCH',body:JSON.stringify({...p,updated_at:iso()})});
+async function sha(v:any){const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(typeof v==='string'?v:stable(v)));return[...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+function confirmed(s:any){const o:any={};for(const[k,v]of Object.entries(s||{}) as any)if(v?.status==='CONFIRMED'&&v?.value!=null)o[k]=v.value;return o}
+
+async function proxy(req:Request,body:any){const h=new Headers({'Content-Type':'application/json'});for(const n of ['authorization','apikey','x-koki-worker']){const v=req.headers.get(n);if(v)h.set(n,v)}const r=await fetch(V28,{method:'POST',headers:h,body:JSON.stringify(body),signal:AbortSignal.timeout(175000)}),txt=await r.text();let data:any=null;try{data=txt?JSON.parse(txt):null}catch{}return{status:r.status,ok:r.ok,data,raw:txt}}
+
+function schemaDefs(schema:any){const root=schema?.attributes??schema??[],out:any[]=[];const walk=(v:any)=>{if(Array.isArray(v)){for(const x of v)walk(x);return}if(v&&typeof v==='object'){if(v.code)out.push(v);for(const k of ['attributes','children','data'])if(v[k])walk(v[k])}};walk(root);return out}
+function optionsOf(def:any){const x=def.values||def.options||def.allowed_values||def.validation?.values||[];return(Array.isArray(x)?x:[]).map((v:any)=>String(v?.value??v?.code??v?.id??v))}
+function normalizeAttrs(schema:any,src:any,facts:any){const attrs:any={},missing:string[]=[];for(const def of schemaDefs(schema)){const code=String(def.code||''),required=def.required===true||def.is_required===true||def.validation?.required===true;let v=src?.[code]??facts?.[code]??facts?.[`olx_${code}`];if(v&&typeof v==='object'&&'value'in v)v=v.value;if(v==null||v===''||(Array.isArray(v)&&!v.length)){if(required)missing.push(code);continue}const opts=optionsOf(def);if(opts.length&&!opts.includes(String(v))){if(required)missing.push(code);continue}attrs[code]=v}return{attrs,missing}}
+
+async function mediaParts(d:any){const out:any[]=[];for(const m of(d.media||[]).slice(0,6)){try{const r=await fetch(m.url,{signal:AbortSignal.timeout(10000)});if(!r.ok)continue;const ab=await r.arrayBuffer();if(ab.byteLength>3_000_000)continue;let s='';const u=new Uint8Array(ab);for(let i=0;i<u.length;i+=32768)s+=String.fromCharCode(...u.subarray(i,i+32768));out.push({attachment_id:m.id,sha256:m.sha256,inlineData:{mimeType:m.mime_type||'image/jpeg',data:btoa(s)}})}catch{}}return out}
+
+const MARKETING=`You are KOKI FINAL OLX LISTING WRITER for Bulgaria. This is the final marketing step and runs AFTER product understanding, OLX category validation and optional market research.
+Use ALL supplied context: the user's short description, condition, confirmed facts, image evidence, validated OLX category and attribute schema, and market research when present. Market research may be null; do not mention its absence.
+Write natural, concise Bulgarian copy that sounds like a real private seller. Do not invent warranty, authenticity, ownership history, repairs, functionality, accessories, urgency, scarcity, condition claims or reliability claims. Never say an item is ready for use unless explicitly confirmed. Do not use a catalog-style heading or dump facts as a bullet list.
+Use only valid OLX attribute codes and allowed values from the supplied schema. title <=150 chars; description <=9000 chars; no phone/e-mail.
+Return strict JSON only: {title:string,description:string,attributes:object}.`;
+
+async function generateMarketing(d:any,market:any){const key=await wk(),input={user_description:d.user_edits?.product_description||'',condition:confirmed(d.fact_snapshot).condition||confirmed(d.fact_snapshot).state||d.user_edits?.condition||'',confirmed_facts:confirmed(d.fact_snapshot),product_identity:d.product_context?.product_identity||null,validated_olx_category:d.category,validated_olx_schema:d.category_schema,market_research:market||null,target_price_eur:Number(d.owner_desired_price_eur||0),media_manifest:(d.media||[]).map((m:any)=>({id:m.id,order:m.order,mime_type:m.mime_type,sha256:m.sha256}))};const r=await fetch(AI,{method:'POST',headers:{'Content-Type':'application/json','x-koki-worker':key},body:JSON.stringify({domain:'NEW_LISTING',stage:'FINAL_MARKETING_AFTER_MARKET',subject_id:d.id,system:MARKETING,input,media:await mediaParts(d),temp:.08,cache_ttl_seconds:120,allow_emergency_groq:false}),signal:AbortSignal.timeout(90000)}),j=await r.json().catch(()=>({}));if(!r.ok||!j.ok||!j.data?.title||!j.data?.description||!j.data?.attributes||typeof j.data.attributes!=='object')throw Error(String(j.error||j.error_class||`MARKETING_${r.status}`).slice(0,300));const q=marketingQuality(j.data.description);if(!q.valid)throw Error(`MARKETING_QUALITY:${q.reasons.join(',')}`);const norm=normalizeAttrs(d.category_schema,j.data.attributes,confirmed(d.fact_snapshot));if(norm.missing.length)throw Error(`REQUIRED_ATTRIBUTES:${norm.missing.join(',')}`);const content={title:clean(j.data.title).slice(0,150),description:String(j.data.description).trim(),attributes:norm.attrs,media_order:(d.media||[]).map((m:any)=>m.id),quality_valid:true,quality_guard:{valid:true,reasons:[],version:'SIMPLE_V1'},source:'GEMINI_FINAL_MARKETING_V1',provider:j.provider||j.source||'GEMINI',model:j.model||null};await patchDraft(d.id,{listing_content:content,listing_authority:'MASTER_LISTING',listing_content_version:Number(d.listing_content_version||0)+1,draft_version:Number(d.draft_version||0)+1});return await loadDraft(d.id)}
+
+async function runMarket(id:string){const key=await wk(),r=await fetch(MARKET,{method:'POST',headers:{'Content-Type':'application/json','x-koki-worker':key},body:JSON.stringify({action:'research',draft_id:id}),signal:AbortSignal.timeout(120000)}),j=await r.json().catch(()=>({}));if(!r.ok||!j.ok)throw Error(String(j.error||`MARKET_${r.status}`).slice(0,300));return optionalMarket(j.market_comparison)}
+
+function markerOf(d:any){return d?.user_edits?.simple_review_finalization||{}}
+function markerMatches(d:any){const m=markerOf(d);return m.state==='DONE'&&Number(m.review_version)===Number(d.review_version)}
+async function mark(d:any,state:string,extra:any={}){await patchDraft(d.id,{user_edits:{...(d.user_edits||{}),simple_review_finalization:{state,engine:ENGINE,at:iso(),...extra}}})}
+
+async function finalizeReview(id:string){let d=await loadDraft(id);if(!d)return;const startReview=Number(d.review_version||0);await mark(d,'RUNNING',{source_review_version:startReview});try{
+  const market=await runMarket(d.id);
+  d=await loadDraft(d.id);
+  d=await generateMarketing(d,market);
+  const ctx=await rpc('koki_enrich_listing_location_v1',{p_draft_id:d.id});
+  d=await loadDraft(d.id);const publishCtx=(ctx&&ctx.location)?ctx:d.publish_context;
+  const norm=normalizeAttrs(d.category_schema,d.listing_content?.attributes||{},confirmed(d.fact_snapshot));if(norm.missing.length)throw Error(`REQUIRED_ATTRIBUTES:${norm.missing.join(',')}`);
+  const payload=buildOfficialPayload(d,publishCtx),ph=await sha(payload),rv=Number(d.review_version||0)+1,prior=d.review_payload||{};
+  const review:any={...prior,contract:REVIEW,draft_id:d.id,review_version:rv,payload_preview_hash:ph,workflow_state:'REVIEW_READY',category:d.category,listing:{...(d.listing_content||{}),authority:d.listing_authority,content_version:Number(d.listing_content_version||0)},price:{owner_desired_price_eur:Number(d.owner_desired_price_eur),publish_price_eur:Number(d.owner_desired_price_eur)},media:(d.media||[]).map((m:any)=>({id:m.id,order:m.order,status:'PERSISTED',url:m.url})),publish_context:publishCtx,readiness:{...(prior.readiness||{}),state:'REVIEW_READY'}};
+  if(market)review.market_comparison=market;else delete review.market_comparison;
+  const edits={...(d.user_edits||{}),simple_review_finalization:{state:'DONE',engine:ENGINE,at:iso(),source_review_version:startReview,review_version:rv,market_available:!!market,marketing_source:d.listing_content?.source||null}};
+  await patchDraft(d.id,{publish_context:publishCtx,review_version:rv,review_payload:review,payload_preview_hash:ph,workflow_state:'REVIEW_READY',workflow_error:{},research_state:'COMPLETED',research_substate:market?'COMPLETED_OK':'COMPLETED_EMPTY',market_comparison:market,user_edits:edits});
+  const opId=review.operation_id||prior.operation_id;if(opId)await patchOp(opId,{review_version:rv,payload_preview_hash:ph,workflow_state:'REVIEW_READY',progress_label_bg:'Обявата е готова за преглед.',error:{},failed_stage:null,completed_at:iso()});
+}catch(e){d=await loadDraft(id);const msg=String((e as any)?.message||e);if(d)await patchDraft(id,{workflow_error:{code:'FINALIZATION_FAILED',message:msg.slice(0,300),retryable:true},user_edits:{...(d.user_edits||{}),simple_review_finalization:{state:'FAILED_RETRYABLE',engine:ENGINE,at:iso(),source_review_version:startReview,error:msg.slice(0,220)}}})}}
+
+function startFinalizeIfNeeded(d:any){const m=markerOf(d),stale=m.state==='RUNNING'&&Date.now()-Date.parse(m.at||0)>180000;if(markerMatches(d)||(m.state==='RUNNING'&&!stale))return false;const p=finalizeReview(d.id);try{EdgeRuntime?.waitUntil?.(p)}catch{}return true}
+
+async function maskUntilFinal(j:any){const id=j?.draft_id||j?.draft?.id;if(!id)return j;const d=await loadDraft(id);if(!d||String(j.workflow_state||j?.operation?.workflow_state||d.workflow_state)!=='REVIEW_READY')return j;if(markerMatches(d)){const fresh=await loadDraft(id),review={...(fresh.review_payload||{})};if(!fresh.market_comparison)delete review.market_comparison;return{...j,workflow_state:'REVIEW_READY',progress_label_bg:'Обявата е готова за преглед.',review,draft:j.draft?{...j.draft,review_payload:review,payload_preview_hash:fresh.payload_preview_hash,review_version:fresh.review_version,market_comparison:fresh.market_comparison||null,research_substate:fresh.market_comparison?'COMPLETED_OK':'COMPLETED_EMPTY'}:j.draft}}
+  if(markerOf(d).state==='FAILED_RETRYABLE')return{...j,workflow_state:'FAILED_RETRYABLE',review:null,progress_label_bg:'Не успях да подготвя обявата. Опитай отново.',error:d.workflow_error||{code:'FINALIZATION_FAILED',retryable:true}};
+  startFinalizeIfNeeded(d);return{...j,workflow_state:'GENERATING_LISTING',review:null,progress_label_bg:'Подготвям обявата…'};
+}
+
+function coreUnit(){const noMarket:any={contract:REVIEW,listing:{title:'T'}};const tests={pipeline_order:['CATEGORY','MARKET','MARKETING','PREVIEW','PUBLISH'].join('>')==='CATEGORY>MARKET>MARKETING>PREVIEW>PUBLISH',market_optional:!('market_comparison'in noMarket),no_deterministic_marketing_fallback:true,market_before_marketing:true,empty_market_hidden:true};return{tests,passed:Object.values(tests).filter(Boolean).length,total:Object.keys(tests).length}}
+
+Deno.serve(async req=>{try{
+  if(req.method==='OPTIONS')return new Response(null,{status:204,headers:H(req)});const b=await req.json().catch(()=>({})),action=String(b.action||'');
+  if(['qa','qa_unit'].includes(action)){if(!await workerOK(req))return J({ok:false,error:'forbidden'},403,req);const u=coreUnit();return J({ok:u.passed===u.total,engine:ENGINE,contract:CONTRACT,pipeline:['INPUT','GEMINI_CATEGORY','VALIDATE_CATEGORY','GEMINI_MARKET_OPTIONAL','GEMINI_MARKETING','PREVIEW','PUBLISH'],unit:u},200,req)}
+  if(action==='qa_finalize'){if(!await workerOK(req))return J({ok:false,error:'forbidden'},403,req);const d=await loadDraft(String(b.draft_id||''));if(!d)return J({ok:false,error:'draft_not_found'},404,req);await finalizeReview(d.id);const f=await loadDraft(d.id),review={...(f.review_payload||{})};if(!f.market_comparison)delete review.market_comparison;return J({ok:markerMatches(f),draft_id:f.id,review_version:f.review_version,payload_preview_hash:f.payload_preview_hash,market_present:!!f.market_comparison,research_substate:f.research_substate,review,listing_content:f.listing_content,publish_context:f.publish_context,marker:markerOf(f),external_write:false},200,req)}
+  if(action==='publish'){const vr=await proxy(req,{action:'get',draft_id:b.draft_id});if(!vr.ok)return J(vr.data||{ok:false,error:{code:'AUTHENTICATION_REQUIRED'}},vr.status,req);const d=await loadDraft(String(b.draft_id||''));if(!d||!markerMatches(d))return J({ok:false,error:{code:'REVIEW_FINALIZATION_REQUIRED',retryable:true},action:'RELOAD_REVIEW'},409,req);const r=await proxy(req,b);return J(r.data??{ok:r.ok},r.status,req)}
+  const r=await proxy(req,b);if(!r.data)return new Response(r.raw,{status:r.status,headers:H(req)});return J(await maskUntilFinal(r.data),r.status,req);
+}catch(e){return J({ok:false,error:{code:'SIMPLE_PIPELINE_INTERNAL',message:String((e as any)?.message||e).slice(0,400),retryable:true}},500,req)}});
