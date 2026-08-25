@@ -33,4 +33,17 @@ assert.match(src,/select=thread_id,metadata/);
 assert.match(src,/decision:'DEFER'.*reconcile_attempt/s);
 assert.match(src,/decision:'ROUTE_SELL'.*classification_source/s);
 
-console.log('ANT-95 PASS: 20 assertions');
+assert.match(src,/async function authProfile\(/);
+assert.match(src,/\/auth\/v1\/user/);
+assert.match(src,/rpc\/koki_current_profile/);
+assert.match(src,/owner_profile_id=eq\.\$\{encodeURIComponent\(pid\)\}/);
+assert.match(src,/action==='list_classification_decisions'/);
+assert.match(src,/action==='resolve_classification'/);
+assert.match(src,/source:'USER_OVERRIDE'/);
+assert.match(src,/classification_override:/);
+assert.match(src,/USER_OVERRIDE_REQUESTED/);
+assert.match(src,/USER_OVERRIDE_APPLIED/);
+assert.match(src,/classification_not_applied/);
+assert.match(src,/status:'queued_reauth_required'/);
+
+console.log('ANT-95 PASS: 32 assertions');
