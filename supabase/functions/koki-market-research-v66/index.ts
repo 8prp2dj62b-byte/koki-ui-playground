@@ -16,6 +16,7 @@ async function patchDraft(id,p){await db(`koki_listing_drafts_v3?id=eq.${id}`,{m
 function confirmed(s){const o={}; for(const [k,v] of Object.entries(s||{})) if(v?.status==='CONFIRMED'&&v?.value!=null)o[k]=v.value; return o}
 function clean(s){return decodeEntities(String(s||'')).replace(/\s+/g,' ').trim()}
 function domainOf(url){try{return new URL(url).hostname.replace(/^www\./,'').toLowerCase()}catch{return''}}
+function insufficientSummary(identity,count){return `Проверих ${Number(count)||0} текущи резултата за ${clean(identity)||'точния продукт'}, но не намерих поне 3 надеждни сравними оферти с проверима цена. Пазарен диапазон няма да бъде измислян.`}
 function moneyExcerpts(text){
   const s=clean(text); const hits=[]; const re=/(.{0,80}(?:€|EUR|лв\.?|BGN)\s*\d[\d\s.,]*|.{0,80}\d[\d\s.,]*\s*(?:€|EUR|лв\.?|BGN).{0,80})/gi; let m;
   while((m=re.exec(s))&&hits.length<8) hits.push(clean(m[0])); return hits;
@@ -51,8 +52,7 @@ async function collect(identity){
   for(const x of batches.flat()){
     const key=x.url.replace(/[?#].*$/,'').replace(/\/$/,''); if(!key||seen.has(key))continue; seen.add(key); items.push(x);
   }
-  const enriched=await Promise.all(items.slice(0,18).map(async x=>({...x,page_excerpt:await fetchPageExcerpt(x.url)})));
-  return enriched;
+  return Promise.all(items.slice(0,18).map(async x=>({...x,page_excerpt:await fetchPageExcerpt(x.url)})));
 }
 const PROMPT=`You are KOKI Market Comparison V66 for Bulgaria. Analyze ONLY the supplied search dataset. The confirmed product facts are absolute authority. Never invent a listing, merchant, URL, price, condition, storage, model, generation, variant or availability.
 
@@ -62,7 +62,7 @@ If fewer than 3 valid used comparables exist, use current NEW retail offers of t
 
 Currency: output EUR only. If a source explicitly shows BGN/лв, convert with fixed rate 1 EUR = 1.95583 BGN. Never infer an unobserved price from context.
 
-If neither rule is satisfied, status=INSUFFICIENT. That is a valid terminal result; explain in Bulgarian what evidence was missing. Never return RUNNING.
+If neither rule is satisfied, status=INSUFFICIENT. Never return RUNNING.
 
 For READY calculate min, max, arithmetic mean and median, plus 5 tiers around mean: GREAT_DEAL <85%, GOOD_DEAL 85-95%, FAIR_MARKET 95-105%, ELEVATED 105-115%, HIGH_OUTLIER >115%. Evaluate target price.
 
@@ -86,17 +86,17 @@ async function run(id){
   try{
     const a=await aiReport(d,dataset),r=a.data;
     if(r.status==='INSUFFICIENT'){
-      const mc={state:'INSUFFICIENT',method:'NONE',confidence:r.confidence||'LOW',price_authority:false,accepted_count:0,comparables:[],tiers:[],target_evaluation:r.target_evaluation||null,summary_bg:r.summary_bg||'Не намерих достатъчно надеждни сравними оферти за коректен пазарен диапазон.',source:ENGINE,dataset_count:dataset.length,provider:a.provider,model:a.model,updated_at:iso()};
-      await patchDraft(id,{research_state:'COMPLETED',research_substate:'COMPLETED_INSUFFICIENT',research_result:{result_code:'INSUFFICIENT_MARKET_EVIDENCE',operational_price_authority:false,summary_bg:mc.summary_bg},research_validation:{accepted_count:0,stopping_rule_met:false,collector_version:'bing-rss-page-enrichment-v66',collected_at:iso()},research_version:Math.max(1,Number(d.research_version||0)+1),market_comparison:mc});
+      const summary=insufficientSummary(identity,dataset.length),mc={state:'INSUFFICIENT',method:'NONE',confidence:r.confidence||'LOW',price_authority:false,accepted_count:0,comparables:[],tiers:[],target_evaluation:r.target_evaluation||null,summary_bg:summary,source:ENGINE,dataset_count:dataset.length,provider:a.provider,model:a.model,updated_at:iso()};
+      await patchDraft(id,{research_state:'COMPLETED',research_substate:'COMPLETED_INSUFFICIENT',research_result:{result_code:'INSUFFICIENT_MARKET_EVIDENCE',operational_price_authority:false,summary_bg:summary},research_validation:{accepted_count:0,stopping_rule_met:false,collector_version:'bing-rss-page-enrichment-v66',collected_at:iso()},research_version:Math.max(1,Number(d.research_version||0)+1),market_comparison:mc});
       return {ok:true,draft_id:id,state:'COMPLETED_INSUFFICIENT',market_comparison:mc,dataset_count:dataset.length};
     }
     const comps=(r.research_method==='USED_MARKET'?r.accepted_used_listings:r.retail_sources).map(x=>({title:x.title||x.merchant,source_ref:x.url,price_eur:Number(x.price_eur),classification:x.classification||'NEW_RETAIL',reason_bg:x.reason_bg||null}));
-    const mc={state:'READY',method:r.research_method,confidence:r.confidence||'MEDIUM',price_authority:true,accepted_count:comps.length,comparables:comps,range_low_eur:r.market.min_eur,range_high_eur:r.market.max_eur,mean_eur:r.market.mean_eur,median_eur:r.market.median_eur,new_average_eur:r.market.new_average_eur,used_baseline_eur:r.market.used_baseline_eur,tiers:r.tiers,target_evaluation:r.target_evaluation,summary_bg:r.summary_bg,source:ENGINE,dataset_count:dataset.length,provider:a.provider,model:a.model,updated_at:iso()};
-    await patchDraft(id,{research_state:'COMPLETED',research_substate:'COMPLETED_OK',research_result:{result_code:'OK',operational_price_authority:true,market_method:r.research_method,market_summary_bg:r.summary_bg},research_validation:{accepted_count:comps.length,stopping_rule_met:true,collector_version:'bing-rss-page-enrichment-v66',collected_at:iso()},research_version:Math.max(1,Number(d.research_version||0)+1),market_comparison:mc});
+    const mc={state:'READY',method:r.research_method,confidence:r.confidence||'MEDIUM',price_authority:true,accepted_count:comps.length,comparables:comps,range_low_eur:r.market.min_eur,range_high_eur:r.market.max_eur,mean_eur:r.market.mean_eur,median_eur:r.market.median_eur,new_average_eur:r.market.new_average_eur,used_baseline_eur:r.market.used_baseline_eur,tiers:r.tiers,target_evaluation:r.target_evaluation,summary_bg:clean(r.summary_bg),source:ENGINE,dataset_count:dataset.length,provider:a.provider,model:a.model,updated_at:iso()};
+    await patchDraft(id,{research_state:'COMPLETED',research_substate:'COMPLETED_OK',research_result:{result_code:'OK',operational_price_authority:true,market_method:r.research_method,market_summary_bg:mc.summary_bg},research_validation:{accepted_count:comps.length,stopping_rule_met:true,collector_version:'bing-rss-page-enrichment-v66',collected_at:iso()},research_version:Math.max(1,Number(d.research_version||0)+1),market_comparison:mc});
     return {ok:true,draft_id:id,state:'COMPLETED_OK',market_comparison:mc,dataset_count:dataset.length};
   }catch(e){
-    const msg=String(e?.message||e); const mc={state:'INSUFFICIENT',method:'NONE',confidence:'LOW',price_authority:false,accepted_count:0,comparables:[],tiers:[],summary_bg:'Не успях да потвърдя достатъчно надеждни сравними оферти. Можеш да публикуваш на зададената от теб цена.',source:ENGINE,error:msg.slice(0,200),dataset_count:dataset.length,updated_at:iso()};
-    await patchDraft(id,{research_state:'COMPLETED',research_substate:'COMPLETED_INSUFFICIENT',research_result:{result_code:'INSUFFICIENT_MARKET_EVIDENCE',operational_price_authority:false,error:msg.slice(0,300)},research_validation:{accepted_count:0,stopping_rule_met:false,collector_version:'bing-rss-page-enrichment-v66',collected_at:iso()},market_comparison:mc});
+    const msg=String(e?.message||e),summary=insufficientSummary(identity,dataset.length); const mc={state:'INSUFFICIENT',method:'NONE',confidence:'LOW',price_authority:false,accepted_count:0,comparables:[],tiers:[],summary_bg:summary,source:ENGINE,error:msg.slice(0,200),dataset_count:dataset.length,updated_at:iso()};
+    await patchDraft(id,{research_state:'COMPLETED',research_substate:'COMPLETED_INSUFFICIENT',research_result:{result_code:'INSUFFICIENT_MARKET_EVIDENCE',operational_price_authority:false,error:msg.slice(0,300),summary_bg:summary},research_validation:{accepted_count:0,stopping_rule_met:false,collector_version:'bing-rss-page-enrichment-v66',collected_at:iso()},market_comparison:mc});
     return {ok:true,draft_id:id,state:'COMPLETED_INSUFFICIENT',market_comparison:mc,dataset_count:dataset.length,degraded:true};
   }
 }
@@ -106,7 +106,7 @@ Deno.serve(async req=>{
     const b=await req.json().catch(()=>({}));
     if(b.action==='qa'){
       const fixture='<rss><channel><item><title>Apple &amp; Phone</title><link>https://shop.example/p</link><description>Цена 999 EUR</description></item></channel></rss>';
-      const p=parseBingRss(fixture); return Response.json({ok:p.length===1&&p[0].url==='https://shop.example/p',engine:ENGINE,unit:{rss_parser:p.length===1,terminal_states:['COMPLETED_OK','COMPLETED_INSUFFICIENT'],never_returns_running_review:true}});
+      const p=parseBingRss(fixture),summary=insufficientSummary('iPhone',10); return Response.json({ok:p.length===1&&p[0].url==='https://shop.example/p'&&summary.includes('10')&&summary.includes('няма да бъде измислян'),engine:ENGINE,unit:{rss_parser:p.length===1,deterministic_insufficient_bg:summary,terminal_states:['COMPLETED_OK','COMPLETED_INSUFFICIENT'],never_returns_running_review:true}});
     }
     if(b.action==='research'&&b.draft_id) return Response.json(await run(String(b.draft_id)));
     return Response.json({ok:false,error:'unsupported_action'},{status:400});
