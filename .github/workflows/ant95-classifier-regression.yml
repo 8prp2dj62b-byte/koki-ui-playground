@@ -1,0 +1,20 @@
+name: ANT95 classifier regression
+
+on:
+  push:
+    branches:
+      - ant-95-koki-classifier
+    paths:
+      - runtime-patches/ant-95/**
+      - .github/workflows/ant95-classifier-regression.yml
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run ANT-95 regression tests
+        run: node runtime-patches/ant-95/classifier.test.mjs
