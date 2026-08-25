@@ -26,29 +26,29 @@ async function proxy(req,body){
   return {status:r.status,ok:r.ok,data,raw:txt};
 }
 
-const MARKETING=`You are KOKI MASTER LISTING V66. Rewrite the public OLX listing in natural, concise Bulgarian sales language using ONLY confirmed facts and the existing validated listing. Do not invent condition details, functionality, warranty, ownership history, repairs, accessories, authenticity, urgency, scarcity or defects. Never use a catalog-like section titled "Основни характеристики" and do not dump facts as a bullet list. Write 2-3 short natural paragraphs that sound like a real private seller, informative but not exaggerated. Keep useful confirmed specifics such as exact model, storage and battery health when present. No phone/e-mail. title <=150 chars. Return strict JSON only: {title:string,description:string}.`;
+const MARKETING=`You are KOKI MASTER LISTING V66. Rewrite the public OLX listing in natural, concise Bulgarian sales language using ONLY confirmed facts and the existing validated listing. Do not invent condition details, functionality, warranty, ownership history, repairs, accessories, authenticity, urgency, scarcity, quality claims or reliability claims. Never say the item is ready for use unless explicitly confirmed. Never use a catalog-like section titled "Основни характеристики" and do not dump facts as a bullet list. Write 2-3 short natural paragraphs that sound like a real private seller, informative but not exaggerated. Keep useful confirmed specifics such as exact model, storage and battery health when present. No phone/e-mail. title <=150 chars. Return strict JSON only: {title:string,description:string}.`;
 function deterministicMarketing(d){
   const f=confirmed(d.fact_snapshot),brand=clean(f.brand||''),model=clean(f.model||d.product_context?.product_identity?.canonical_name||d.user_edits?.product_description||'продукта'),storage=clean(f.storage_capacity||f.internal_memory||''),bh=clean(f.battery_health||''),state=clean(f.state||f.condition||'used');
   const name=clean([brand,model].filter(Boolean).join(' '))||clean(d.listing_content?.title)||'Продукт';
   const details=[]; if(storage)details.push(`${storage}${/^\d+$/.test(storage)?'GB':''} памет`); if(bh)details.push(`Battery Health ${String(bh).replace(/%$/,'')}%`);
   const first=`Продавам ${state==='used'?'използван ':''}${name}${details.length?` с ${details.join(' и ')}`:''}.`;
-  const second='Обявата е за конкретния артикул от снимките. Описанието е ограничено до потвърдените данни, без добавени предположения за състояние, история или комплектовка.';
+  const second='Обявата е за конкретния артикул от снимките. Посочени са само потвърдените данни, без предположения за състояние, история или комплектовка.';
   const third='При интерес можеш да пишеш за допълнителни въпроси преди сделката.';
   return {title:clean(d.listing_content?.title||name).slice(0,150),description:`${first}\n\n${second}\n\n${third}`,source:'DETERMINISTIC_TRUTHFUL_FALLBACK_V66'};
 }
 async function improveMarketing(d){
-  if(d.listing_content?.source==='MASTER_LISTING_V66'&&!isCatalogicDescription(d.listing_content?.description||''))return d;
+  if(d.listing_content?.source==='MASTER_LISTING_V66'&&marketingQuality(d.listing_content?.description||'').valid)return d;
   const key=await wk(),input={confirmed_facts:confirmed(d.fact_snapshot),validated_category:d.category,current_listing:{title:d.listing_content?.title,description:d.listing_content?.description},media_count:(d.media||[]).length}; let chosen=null,last='';
   for(let i=0;i<2;i++){
     try{
-      const r=await fetch(AI,{method:'POST',headers:{'Content-Type':'application/json','x-koki-worker':key},body:JSON.stringify({domain:'NEW_LISTING',stage:'MASTER_LISTING_V66',subject_id:d.id,system:i?MARKETING+' Previous draft failed the structural quality gate; make it natural prose with no fact-list formatting.':MARKETING,input,media:[],temp:.08,cache_ttl_seconds:120,allow_emergency_groq:false}),signal:AbortSignal.timeout(80000)}),j=await r.json().catch(()=>({}));
+      const r=await fetch(AI,{method:'POST',headers:{'Content-Type':'application/json','x-koki-worker':key},body:JSON.stringify({domain:'NEW_LISTING',stage:'MASTER_LISTING_V66',subject_id:d.id,system:i?MARKETING+' Previous draft failed the structural or truthfulness quality gate; make it natural prose and remove unsupported promotional claims.':MARKETING,input,media:[],temp:.08,cache_ttl_seconds:120,allow_emergency_groq:false}),signal:AbortSignal.timeout(80000)}),j=await r.json().catch(()=>({}));
       if(r.ok&&j.ok&&j.data?.title&&j.data?.description){const q=marketingQuality(j.data.description);if(q.valid){chosen={title:clean(j.data.title).slice(0,150),description:String(j.data.description).trim(),source:'MASTER_LISTING_V66',provider:j.provider||j.source||null,model:j.model||null};break}last=q.reasons.join(',')}
       else last=String(j.error||j.error_class||`AI_${r.status}`);
     }catch(e){last=String(e?.message||e)}
   }
   if(!chosen)chosen={...deterministicMarketing(d),warning:`AI_REWRITE_FALLBACK:${last.slice(0,120)}`};
   const q=marketingQuality(chosen.description); if(!q.valid)throw Error(`V66_MARKETING_QUALITY_FAILED:${q.reasons.join(',')}`);
-  const content={...(d.listing_content||{}),title:chosen.title,description:chosen.description,source:chosen.source,quality_valid:true,quality_guard:{valid:true,reasons:[],version:'V66_NATURAL_COPY'},v66_provider:chosen.provider||null,v66_model:chosen.model||null,v66_warning:chosen.warning||null};
+  const content={...(d.listing_content||{}),title:chosen.title,description:chosen.description,source:chosen.source,quality_valid:true,quality_guard:{valid:true,reasons:[],version:'V66_NATURAL_COPY_TRUTHFUL'},v66_provider:chosen.provider||null,v66_model:chosen.model||null,v66_warning:chosen.warning||null};
   await patchDraft(d.id,{listing_content:content,listing_authority:'MASTER_LISTING',listing_content_version:Number(d.listing_content_version||0)+1,draft_version:Number(d.draft_version||0)+1});
   return await loadDraft(d.id);
 }
@@ -62,11 +62,11 @@ async function finalizeReview(id){
   try{
     d=await improveMarketing(d);
     await rpc('koki_enrich_listing_location_v1',{p_draft_id:d.id});
-    await runMarket(d.id);
+    const marketResult=await runMarket(d.id);
     d=await loadDraft(d.id);
     const ctx=await rpc('koki_enrich_listing_location_v1',{p_draft_id:d.id});
     d=await loadDraft(d.id); const publishCtx=(ctx&&ctx.location)?ctx:d.publish_context;
-    const payload=buildOfficialPayload(d,publishCtx),ph=await sha(payload),rv=Number(d.review_version||0)+1,market=normalizeMarketForReview(d.market_comparison||{}),researchSubstate=market.state==='READY'?'COMPLETED_OK':'COMPLETED_INSUFFICIENT';
+    const payload=buildOfficialPayload(d,publishCtx),ph=await sha(payload),rv=Number(d.review_version||0)+1,market=normalizeMarketForReview(marketResult?.market_comparison||{}),researchSubstate=market.state==='READY'?'COMPLETED_OK':'COMPLETED_INSUFFICIENT';
     const prior=d.review_payload||{},review={...prior,contract:REVIEW,draft_id:d.id,review_version:rv,payload_preview_hash:ph,listing:{...(d.listing_content||{}),authority:d.listing_authority,content_version:Number(d.listing_content_version||0)},publish_context:publishCtx,market_comparison:market,workflow_state:'REVIEW_READY',readiness:{...(prior.readiness||{}),state:'REVIEW_READY'}};
     const edits={...(d.user_edits||{}),research_authority:'KOKI_MARKET_RESEARCH_V66',v66_review_finalization:{state:'DONE',engine:ENGINE,at:iso(),source_review_version:startReview,review_version:rv,market_state:researchSubstate,marketing_source:d.listing_content?.source||null,market_snapshot_state:market.state}};
     await patchDraft(d.id,{publish_context:publishCtx,review_version:rv,review_payload:review,payload_preview_hash:ph,workflow_state:'REVIEW_READY',workflow_error:{},research_state:'COMPLETED',research_substate:researchSubstate,market_comparison:market,user_edits:edits});
@@ -82,7 +82,7 @@ function startFinalizeIfNeeded(d){
 }
 async function maskUntilFinal(j){
   const id=j?.draft_id||j?.draft?.id; if(!id)return j; const d=await loadDraft(id); if(!d||String(j.workflow_state||j?.operation?.workflow_state||d.workflow_state)!=='REVIEW_READY')return j;
-  const rm=reviewMarket(d),state=markerMatches(d)?'REVIEW_READY':reviewVisibility(markerOf(d).state,d.research_substate); if(state==='REVIEW_READY'){
+  const state=markerMatches(d)?'REVIEW_READY':reviewVisibility(markerOf(d).state,d.research_substate); if(state==='REVIEW_READY'){
     const fresh=await loadDraft(id),market=reviewMarket(fresh)||normalizeMarketForReview(fresh.market_comparison||{}),researchState=market.state==='READY'?'COMPLETED_OK':'COMPLETED_INSUFFICIENT'; return {...j,workflow_state:'REVIEW_READY',progress_label_bg:'Обявата е готова за преглед.',review:{...(fresh.review_payload||{}),market_comparison:market},draft:j.draft?{...j.draft,review_payload:{...(fresh.review_payload||{}),market_comparison:market},payload_preview_hash:fresh.payload_preview_hash,review_version:fresh.review_version,research_substate:researchState,market_comparison:market}:j.draft,research:{state:researchState,market_comparison:market}};
   }
   if(state==='FAILED_RETRYABLE')return {...j,workflow_state:'FAILED_RETRYABLE',review:null,progress_label_bg:'Не успях да финализирам анализа. Опитай отново.',error:d.workflow_error||{code:'V66_FINALIZATION_FAILED',retryable:true}};
@@ -91,9 +91,10 @@ async function maskUntilFinal(j){
 function coreUnit(){
   const dry='Основни характеристики:\n- Марка: Apple\n- Модел: iPhone\n- Памет: 512GB';
   const natural='Продавам използван iPhone 16 Pro с 512GB памет. Обявата е за конкретния телефон от снимките. При интерес можеш да пишеш за допълнителни въпроси преди сделката.';
+  const unsafe='Телефонът е готов за употреба и е надеждно устройство с доказаното качество на Apple.';
   const p=buildOfficialPayload({id:'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',listing_content:{title:'T',description:'D',attributes:{}},category:{id:454},media:[],owner_desired_price_eur:500},{advertiser_type:'private',contact:{name:'Koki'},location:{city_id:8771,district_id:1393}});
   const terminalReview={review_version:4,review_payload:{market_comparison:{state:'INSUFFICIENT'}},user_edits:{v66_review_finalization:{state:'DONE',review_version:4}}};
-  const tests={catalog_rejected:isCatalogicDescription(dry)&&!marketingQuality(dry).valid,natural_passes:marketingQuality(natural).valid,district_in_payload:p.location.district_id===1393,review_hidden_while_running:reviewVisibility('RUNNING','RUNNING')==='FINALIZING_REVIEW',review_snapshot_fences_legacy_running:markerMatches(terminalReview)};
+  const tests={catalog_rejected:isCatalogicDescription(dry)&&!marketingQuality(dry).valid,natural_passes:marketingQuality(natural).valid,unsupported_promo_rejected:!marketingQuality(unsafe).valid,district_in_payload:p.location.district_id===1393,review_snapshot_fences_legacy_running:markerMatches(terminalReview)};
   return {tests,passed:Object.values(tests).filter(Boolean).length,total:Object.keys(tests).length};
 }
 Deno.serve(async req=>{
