@@ -73,9 +73,16 @@ async function act(body){
     await page.keyboard.type(value,{delay:item.type==='password'?55:35});
   }
   lastError='';lastHttp=null;
-  const submit=page.locator('button[type="submit"]:visible,input[type="submit"]:visible,form button:visible').first();
-  if(await submit.count())await submit.click();else await page.locator('form').first().evaluate(f=>f.requestSubmit());
-  await page.waitForTimeout(1400);
+  const before=page.url();
+  const form=page.locator('form').first();
+  if(!(await form.count()))throw new Error('login_form_missing');
+  await form.evaluate(f=>f.requestSubmit());
+  const deadline=Date.now()+5000;
+  while(Date.now()<deadline){
+    if(captured||page.url()!==before||lastHttp!==null)break;
+    await page.waitForTimeout(200);
+  }
+  await page.waitForTimeout(350);
   return snapshot();
 }
 
