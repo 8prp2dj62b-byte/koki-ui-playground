@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/kleinanzeigen-auth-bridge-v1
+      - feature/kleinanzeigen-auth-bridge-v2
     paths:
       - 'kleinanzeigen-bridge/**'
       - '.github/workflows/kleinanzeigen-bridge-check.yml'
@@ -21,4 +22,5 @@ jobs:
           node-version: '20'
       - run: npm install --ignore-scripts --no-audit --no-fund
       - run: node --check api/index.js
-      - run: node -e "import('./api/index.js').then(()=>console.log('IMPORT_OK'))"
+      - run: node --check api/link.js
+      - run: node -e "Promise.all([import('./api/index.js'),import('./api/link.js')]).then(()=>console.log('IMPORT_OK'))"
