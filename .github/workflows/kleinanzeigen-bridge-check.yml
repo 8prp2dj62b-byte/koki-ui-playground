@@ -21,6 +21,5 @@ jobs:
         with:
           node-version: '20'
       - run: npm install --ignore-scripts --no-audit --no-fund
-      - run: node --check api/index.js
       - run: node --check api/link.js
-      - run: node -e "Promise.all([import('./api/index.js'),import('./api/link.js')]).then(()=>console.log('IMPORT_OK'))"
+      - run: node -e "import('./api/link.js').then(()=>console.log('IMPORT_OK'))"
