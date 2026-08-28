@@ -10,8 +10,8 @@ const AUD='koki-kleinanzeigen-bridge';
 let sessionId=String(process.env.SESSION_ID||'').trim();
 if(!sessionId){try{sessionId=(await fs.readFile('.github/kleinanzeigen-session-id','utf8')).trim()}catch{}}
 if(!/^[0-9a-f-]{36}$/i.test(sessionId))throw new Error('bridge_session_missing');
-const tunnelUrl=process.env.TUNNEL_URL;
-const tunnelPassword=process.env.VNC_PASSWORD;
+const tunnelUrl=String(process.env.TUNNEL_URL||'');
+const tunnelPassword=String(process.env.VNC_PASSWORD||'');
 
 function b64url(buf){return Buffer.from(buf).toString('base64url')}
 async function oidc(){
@@ -25,30 +25,48 @@ async function report(stage,payload={}){
   const r=await fetch(BRIDGE,{method:'POST',headers:{Authorization:`Bearer ${await oidc()}`,'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId,stage,...payload})});
   if(!r.ok)throw new Error(`bridge_report_${stage}_${r.status}`);
 }
+function directTunnelUrl(){
+  const u=new URL(tunnelUrl);
+  const frag=new URLSearchParams((u.hash||'').replace(/^#/,''));
+  frag.set('autoconnect','true');frag.set('resize','scale');frag.set('password',tunnelPassword);
+  u.hash=frag.toString();return u.toString();
+}
+function callbackFrom(value){try{const u=new URL(value);return u.origin===AUTH&&u.pathname==='/android/com.ebay.kleinanzeigen/callback'?u:null}catch{return null}}
 
 let browser;
 try{
-  if(!tunnelUrl||!tunnelPassword)throw new Error('runner_endpoint_missing');
-  await report('runner_ready',{tunnel_url:tunnelUrl,tunnel_password:tunnelPassword});
+  if(!tunnelUrl||tunnelPassword.length<8)throw new Error('runner_endpoint_missing');
+  await report('runner_ready',{tunnel_url:directTunnelUrl(),tunnel_password:tunnelPassword});
 
   const verifier=b64url(crypto.randomBytes(32));
   const challenge=b64url(crypto.createHash('sha256').update(verifier).digest());
   const state=b64url(crypto.randomBytes(16));
   const p=new URLSearchParams({client_id:CLIENT_ID,response_type:'code',redirect_uri:REDIRECT_URI,scope:'openid email profile offline_access',code_challenge:challenge,code_challenge_method:'S256',state,prompt:'login'});
 
-  browser=await chromium.launch({headless:false,args:['--no-sandbox','--disable-dev-shm-usage','--window-size=1280,900']});
+  browser=await chromium.launch({headless:false,executablePath:process.env.CHROME_PATH||undefined,args:['--no-sandbox','--disable-dev-shm-usage','--disable-blink-features=AutomationControlled','--window-size=1280,900']});
   const context=await browser.newContext({viewport:{width:1280,height:820},locale:'de-DE'});
   const page=await context.newPage();
-  await page.goto(`${AUTH}/authorize?${p.toString()}`,{waitUntil:'domcontentloaded',timeout:60000});
+  let captured='';
+  page.on('request',r=>{const cb=callbackFrom(r.url());if(cb)captured=cb.toString()});
+  page.on('framenavigated',f=>{if(f===page.mainFrame()){const cb=callbackFrom(f.url());if(cb)captured=cb.toString()}});
+  const nav=await page.goto(`${AUTH}/authorize?${p.toString()}`,{waitUntil:'domcontentloaded',timeout:60000});
+  if(nav&&nav.status()>=400)throw new Error(`auth_page_http_${nav.status()}`);
+  if(!String(page.url()).startsWith(AUTH))throw new Error('auth_page_unexpected_origin');
+  await report('auth_page_ready');
 
-  await page.waitForURL(u=>u.href.startsWith(REDIRECT_URI),{timeout:15*60*1000,waitUntil:'commit'});
-  const callback=new URL(page.url());
+  const deadline=Date.now()+25*60*1000;
+  while(Date.now()<deadline&&!captured){
+    const cb=callbackFrom(page.url());if(cb){captured=cb.toString();break}
+    await page.waitForTimeout(250);
+  }
+  if(!captured)throw new Error('callback_timeout');
+  const callback=new URL(captured);
   if(callback.searchParams.get('state')!==state)throw new Error('oauth_state_mismatch');
   const remoteError=callback.searchParams.get('error');if(remoteError)throw new Error(`oauth_${remoteError}`);
   const code=callback.searchParams.get('code');if(!code)throw new Error('oauth_code_missing');
 
   const body=new URLSearchParams({grant_type:'authorization_code',client_id:CLIENT_ID,code,code_verifier:verifier,redirect_uri:REDIRECT_URI});
-  const tr=await fetch(`${AUTH}/oauth/token`,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json','User-Agent':'Kleinanzeigen Android 2026.31.2'},body});
+  const tr=await fetch(`${AUTH}/oauth/token`,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json','User-Agent':'Kleinanzeigen Android 2026.31.2'},body,signal:AbortSignal.timeout(30000)});
   const tj=await tr.json().catch(()=>({}));
   if(!tr.ok||!tj.refresh_token||!tj.access_token)throw new Error(`token_exchange_${tr.status}`);
 
