@@ -1,9 +1,7 @@
-# interactive DOM-mirror bridge 2026-08-28 v8
+# interactive DOM-mirror bridge 2026-08-28 v9
 name: Kleinanzeigen Bridge Trigger
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
   workflow_dispatch:
   push:
     branches: [main]
@@ -16,7 +14,7 @@ permissions:
 
 concurrency:
   group: kleinanzeigen-browser-bridge
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   bridge:
