@@ -1,0 +1,32 @@
+name: Kleinanzeigen iOS Bridge CI
+
+on:
+  push:
+    branches:
+      - integration/kleinanzeigen-ios-bridge-v1
+    paths:
+      - 'integrations/kleinanzeigen-ios-bridge/**'
+      - '.github/workflows/kleinanzeigen-ios-bridge-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: integrations/kleinanzeigen-ios-bridge
+        run: xcodegen generate
+      - name: Build for iOS Simulator
+        working-directory: integrations/kleinanzeigen-ios-bridge
+        run: |
+          xcodebuild \
+            -project KokiKleinanzeigenBridge.xcodeproj \
+            -scheme KokiKleinanzeigenBridge \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
