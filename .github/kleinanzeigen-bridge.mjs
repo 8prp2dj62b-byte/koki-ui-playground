@@ -8,6 +8,7 @@ const REDIRECT_URI='https://login.kleinanzeigen.de/android/com.ebay.kleinanzeige
 const AUTH='https://login.kleinanzeigen.de';
 const BRIDGE='https://aqhdzfsspmuvadnlchvj.supabase.co/functions/v1/koki-command-center-staging-v30/report';
 const AUD='koki-kleinanzeigen-bridge';
+const KOKI_ORIGIN='https://koki.tonyshodling.eu';
 const CONTROL_PORT=Number(process.env.CONTROL_PORT||6090);
 const CONTROL_TOKEN=String(process.env.CONTROL_TOKEN||'');
 let sessionId=String(process.env.SESSION_ID||'').trim();
@@ -28,7 +29,7 @@ async function report(stage,payload={}){
   if(!r.ok)throw new Error(`bridge_report_${stage}_${r.status}`);
 }
 function callbackFrom(value){try{const u=new URL(value);return u.origin===AUTH&&u.pathname==='/android/com.ebay.kleinanzeigen/callback'?u:null}catch{return null}}
-function send(res,status,body){res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(body))}
+function send(res,status,body){res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store','Access-Control-Allow-Origin':KOKI_ORIGIN,'Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type,X-Control-Token','Vary':'Origin'});res.end(JSON.stringify(body))}
 async function readJson(req){return await new Promise((resolve,reject)=>{let b='';req.on('data',c=>{b+=c;if(b.length>20000)reject(new Error('body_too_large'))});req.on('end',()=>{try{resolve(JSON.parse(b||'{}'))}catch(e){reject(e)}});req.on('error',reject)})}
 
 let browser,page,captured='',connected=false,lastError='',lastHttp=null,configured=false;
@@ -68,27 +69,29 @@ async function act(body){
     const value=String(fields[item.key]??'');
     const loc=page.locator('input').nth(item.i);
     await loc.click();
-    await page.keyboard.press(process.platform==='darwin'?'Meta+A':'Control+A').catch(()=>{});
-    await page.keyboard.type(value,{delay:item.type==='password'?45:30});
+    await page.keyboard.press('Control+A').catch(()=>{});
+    await page.keyboard.type(value,{delay:item.type==='password'?55:35});
   }
   lastError='';lastHttp=null;
-  const submit=page.locator('button[type="submit"],input[type="submit"],form button').filter({visible:true}).first();
+  const submit=page.locator('button[type="submit"],input[type="submit"],form button').first();
   if(await submit.count())await submit.click();else await page.locator('form').first().evaluate(f=>f.requestSubmit());
-  await page.waitForTimeout(1200);
+  await page.waitForTimeout(1400);
   return snapshot();
 }
 
 const server=http.createServer(async(req,res)=>{
   try{
-    if(req.headers['x-control-token']!==CONTROL_TOKEN)return send(res,403,{ok:false,error:'forbidden'});
     const u=new URL(req.url||'/',`http://127.0.0.1:${CONTROL_PORT}`);
+    if(req.method==='OPTIONS')return send(res,204,{});
+    const authorized=req.headers['x-control-token']===CONTROL_TOKEN||u.searchParams.get('k')===CONTROL_TOKEN;
+    if(!authorized)return send(res,403,{ok:false,error:'forbidden'});
     if(req.method==='GET'&&u.pathname==='/health')return send(res,200,{ok:true});
     if(req.method==='GET'&&u.pathname==='/state')return send(res,200,await snapshot());
     if(req.method==='POST'&&u.pathname==='/action')return send(res,200,await act(await readJson(req)));
     if(req.method==='POST'&&u.pathname==='/configure'){
       const b=await readJson(req),url=String(b.tunnel_url||'');
       if(!/^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/i.test(url))return send(res,400,{ok:false,error:'invalid_tunnel'});
-      if(!configured){configured=true;await report('runner_ready',{tunnel_url:url,tunnel_password:CONTROL_TOKEN});if(page)await report('auth_page_ready')}
+      if(!configured){configured=true;const publicUrl=`${url}?k=${encodeURIComponent(CONTROL_TOKEN)}`;await report('runner_ready',{tunnel_url:publicUrl,tunnel_password:CONTROL_TOKEN});if(page)await report('auth_page_ready')}
       return send(res,200,{ok:true});
     }
     return send(res,404,{ok:false,error:'not_found'});
