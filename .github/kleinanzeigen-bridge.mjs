@@ -11,6 +11,8 @@ const AUD='koki-kleinanzeigen-bridge';
 const KOKI_ORIGIN='https://koki.tonyshodling.eu';
 const CONTROL_PORT=Number(process.env.CONTROL_PORT||6090);
 const CONTROL_TOKEN=String(process.env.CONTROL_TOKEN||'');
+const AUTH0_PRIMARY="button[type='submit'][data-action-button-primary='true']:not([disabled]):not([aria-disabled='true'])";
+const AUTH0_CAPTCHA="[data-captcha-provider],.recaptcha,.hcaptcha,.captcha-challenge,[class*='auth0-v2'],[class*='auth0_v2'],.friendly-captcha,.frc-captcha,.arkose,.cf-turnstile,.g-recaptcha,iframe[src*='google.com/recaptcha'],iframe[src*='recaptcha.net'],iframe[src*='hcaptcha.com'],iframe[src*='challenges.cloudflare.com'],iframe[src*='arkoselabs.com'],iframe[src*='funcaptcha.com']";
 let sessionId=String(process.env.SESSION_ID||'').trim();
 if(!sessionId){try{sessionId=(await fs.readFile('.github/kleinanzeigen-session-id','utf8')).trim()}catch{}}
 if(!/^[0-9a-f-]{36}$/i.test(sessionId))throw new Error('bridge_session_missing');
@@ -53,10 +55,35 @@ async function snapshot(){
       const r=el.getBoundingClientRect();
       return !el.disabled&&!el.readOnly&&r.width>0&&r.height>0&&['text','email','password','tel','number'].includes(t);
     }).slice(0,4).map((el,i)=>({key:el.name||el.id||`field_${i}`,type:(el.type||'text').toLowerCase(),label:labelFor(el),autocomplete:el.autocomplete||'',value:el.type==='password'?'':el.value||''}));
-    const buttons=[...document.querySelectorAll('button,input[type="submit"]')].filter(el=>{const r=el.getBoundingClientRect();return !el.disabled&&r.width>0&&r.height>0}).slice(0,4).map((el,i)=>({key:el.id||el.name||`button_${i}`,text:(el.innerText||el.value||'Продължи').trim().slice(0,100),type:'submit'}));
+    const buttons=[...document.querySelectorAll("button[type='submit'][data-action-button-primary='true'],button,input[type='submit']")].filter(el=>{const r=el.getBoundingClientRect();return !el.disabled&&r.width>0&&r.height>0}).slice(0,4).map((el,i)=>({key:el.id||el.name||`button_${i}`,text:(el.innerText||el.value||'Продължи').trim().slice(0,100),type:'submit'}));
     return {title:(document.title||'Kleinanzeigen').trim(),text:(document.body?.innerText||'').replace(/\s+/g,' ').trim().slice(0,600),inputs,buttons};
   }).catch(()=>({title:'Kleinanzeigen',text:'',inputs:[],buttons:[]}));
   return {ok:true,status:lastError?'blocked':'ready',url:new URL(page.url()).pathname,title:data.title,text:data.text,inputs:data.inputs,buttons:data.buttons,last_http:lastHttp,error:lastError||null};
+}
+
+async function hasCaptcha(){
+  try{return await page.locator(AUTH0_CAPTCHA).count()>0}catch{return false}
+}
+async function captchaTokenReady(){
+  try{return await page.evaluate(()=>String(document.querySelector("input[name='captcha']")?.value||'').length>0)}catch{return false}
+}
+async function waitCaptchaToken(ms=7000){
+  const deadline=Date.now()+ms;
+  while(Date.now()<deadline){if(await captchaTokenReady())return true;await page.waitForTimeout(250)}
+  return false;
+}
+async function clickAuth0Primary(){
+  const b=page.locator(AUTH0_PRIMARY).first();
+  if(!(await b.count()))throw new Error('auth0_primary_submit_missing');
+  await b.click({noWaitAfter:true,timeout:3500});
+}
+async function settle(before,ms=5000){
+  const deadline=Date.now()+ms;
+  while(Date.now()<deadline){
+    if(captured||page.url()!==before||lastHttp===403)break;
+    await page.waitForTimeout(200);
+  }
+  await page.waitForTimeout(350);
 }
 
 async function act(body){
@@ -74,15 +101,26 @@ async function act(body){
   }
   lastError='';lastHttp=null;
   const before=page.url();
-  const form=page.locator('form').first();
-  if(!(await form.count()))throw new Error('login_form_missing');
-  await form.evaluate(f=>f.requestSubmit());
-  const deadline=Date.now()+5000;
-  while(Date.now()<deadline){
-    if(captured||page.url()!==before||lastHttp!==null)break;
-    await page.waitForTimeout(200);
+  const isPassword=before.includes('/u/login/password');
+
+  if(isPassword&&await hasCaptcha()){
+    const ready=await waitCaptchaToken(7000);
+    if(!ready){lastError='Kleinanzeigen security challenge изисква потвърждение';return snapshot()}
   }
-  await page.waitForTimeout(350);
+
+  await clickAuth0Primary();
+  await settle(before,isPassword?5000:1800);
+
+  if(!isPassword&&page.url().includes('/u/login/identifier')){
+    await page.waitForTimeout(800);
+    if(await hasCaptcha()){
+      const ready=await waitCaptchaToken(7000);
+      if(!ready){lastError='Kleinanzeigen security challenge изисква потвърждение';return snapshot()}
+      const again=page.url();
+      await clickAuth0Primary();
+      await settle(again,5000);
+    }
+  }
   return snapshot();
 }
 
