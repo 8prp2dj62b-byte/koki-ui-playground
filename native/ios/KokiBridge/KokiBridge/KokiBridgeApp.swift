@@ -151,7 +151,7 @@ final class BridgeModel: ObservableObject {
 
             let returnURL = URL(string: payload.return_url ?? "https://koki.tonyshodling.eu/koki-command-center?ka_native=connected")!
             try? await Task.sleep(for: .milliseconds(450))
-            UIApplication.shared.open(returnURL)
+            await UIApplication.shared.open(returnURL)
         } catch {
             isWorking = false
             status = "Свързването не завърши."
