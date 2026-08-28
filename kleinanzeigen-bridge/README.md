@@ -1,4 +1,4 @@
-# KOKI Kleinanzeigen Auth Bridge v1
+# KOKI Kleinanzeigen Auth Bridge v2
 
 Isolated one-time browser bootstrap for Kleinanzeigen account linking. It is not part of KOKI BUY/SELL runtime.
 
@@ -6,22 +6,14 @@ Isolated one-time browser bootstrap for Kleinanzeigen account linking. It is not
 
 Deploy this directory as a separate Vercel project with Root Directory `kleinanzeigen-bridge`.
 
-Required environment variables:
+No runtime environment variables are required.
 
-- `KOKI_ORIGIN=https://koki.tonyshodling.eu`
-- `SUPABASE_URL=https://aqhdzfsspmuvadnlchvj.supabase.co`
-- `SUPABASE_PUBLISHABLE_KEY=<KOKI publishable key>`
-- `KLEINANZEIGEN_STORE_URL=https://aqhdzfsspmuvadnlchvj.supabase.co/functions/v1/koki-command-center-staging-v30/store`
-- `BRIDGE_SESSION_SECRET=<random 32+ byte secret>`
-
-## Contract
-
-`POST /api` with the user's KOKI bearer token.
+Active endpoint: `POST /api/link` with the user's KOKI bearer token.
 
 Login:
 
 ```json
-{"action":"login","email":"user@example.com","password":"..."}
+{"email":"user@example.com","password":"..."}
 ```
 
 Success:
@@ -42,8 +34,8 @@ MFA continuation:
 {"action":"otp","continuation":"...","code":"123456"}
 ```
 
-The password is held only in the request/process memory and is never written to Supabase. MFA continuation state is AES-256-GCM encrypted and expires after five minutes. Tokens are sent server-to-server to the isolated Supabase integration endpoint and are never returned to the PWA.
+The password exists only in request/process memory. MFA continuation state is AES-256-GCM encrypted with the active KOKI access token and expires after five minutes. The browser bridge never receives Kleinanzeigen access/refresh tokens: it sends only the PKCE authorization code and verifier server-to-server to the isolated Supabase integration endpoint, which performs the token exchange and one-time persistence.
 
 ## Supabase usage
 
-No polling. One KOKI-profile validation call per explicit login/MFA action. One token-store call only after successful Kleinanzeigen authentication. Status is expected to be lazy-loaded and cached by the KOKI Profile UI.
+No polling. One profile-validation RPC per explicit login/MFA action. One token-exchange/store call only after successful Kleinanzeigen authentication. Profile status is loaded only when the integration is opened and should remain session-cached by the KOKI UI.
