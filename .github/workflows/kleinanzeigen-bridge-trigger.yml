@@ -1,4 +1,4 @@
-# interactive DOM-mirror bridge 2026-08-28
+# interactive DOM-mirror bridge 2026-08-28 v2
 name: Kleinanzeigen Bridge Trigger
 
 on:
@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: kleinanzeigen-browser-bridge
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   bridge:
