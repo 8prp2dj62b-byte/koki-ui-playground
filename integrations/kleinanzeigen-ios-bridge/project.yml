@@ -1,0 +1,25 @@
+name: KokiKleinanzeigenBridge
+options:
+  bundleIdPrefix: eu.tonyshodling.koki
+settings:
+  base:
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    SWIFT_VERSION: "5.0"
+targets:
+  KokiKleinanzeigenBridge:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - KokiKleinanzeigenBridge
+    info:
+      path: KokiKleinanzeigenBridge/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: eu.tonyshodling.koki.kleinanzeigenbridge
+        PRODUCT_NAME: KOKI Bridge
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+    scheme:
+      testTargets: []
