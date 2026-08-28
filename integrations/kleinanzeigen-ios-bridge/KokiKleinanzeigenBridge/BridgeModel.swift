@@ -15,11 +15,13 @@ final class BridgeModel: ObservableObject {
     private let clientID = "uV5j90myVPc2XzEOFuWUD2At17OACEGQ"
     private let redirectURI = "https://login.kleinanzeigen.de/android/com.ebay.kleinanzeigen/callback"
     private let scope = "openid email profile offline_access"
+    private let allowedCompleteHost = "aqhdzfsspmuvadnlchvj.supabase.co"
+    private let allowedCompletePath = "/functions/v1/koki-command-center-staging-v30/device/complete"
+    private let kokiReturnURL = URL(string: "https://koki.tonyshodling.eu/koki-command-center?ka_connected=1")!
 
     private var sessionID = ""
     private var pairToken = ""
     private var completeURL: URL?
-    private var returnURL: URL?
     private var verifier = ""
     private var expectedState = ""
     private var callbackHandled = false
@@ -43,18 +45,17 @@ final class BridgeModel: ObservableObject {
             let sessionID = query("session_id"), !sessionID.isEmpty,
             let pairToken = query("pair_token"), pairToken.count >= 32,
             let complete = query("complete_url").flatMap(URL.init(string:)),
-            let returnURL = query("return_url").flatMap(URL.init(string:)),
             complete.scheme == "https",
-            returnURL.scheme == "https"
+            complete.host == allowedCompleteHost,
+            complete.path == allowedCompletePath
         else {
-            fail("KOKI bridge заявката е непълна.")
+            fail("KOKI bridge заявката е непълна или невалидна.")
             return
         }
 
         self.sessionID = sessionID
         self.pairToken = pairToken
         self.completeURL = complete
-        self.returnURL = returnURL
         callbackHandled = false
 
         let pkce = makePKCE()
@@ -170,10 +171,8 @@ final class BridgeModel: ObservableObject {
             pairToken = ""
             verifier = ""
 
-            if let returnURL {
-                try? await Task.sleep(for: .milliseconds(450))
-                _ = await UIApplication.shared.open(returnURL)
-            }
+            try? await Task.sleep(for: .milliseconds(450))
+            _ = await UIApplication.shared.open(kokiReturnURL)
         } catch {
             finishWithError("Свързването с KOKI не завърши: \(error.localizedDescription)")
         }
