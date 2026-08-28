@@ -7,7 +7,9 @@ const REDIRECT_URI='https://login.kleinanzeigen.de/android/com.ebay.kleinanzeige
 const AUTH='https://login.kleinanzeigen.de';
 const BRIDGE='https://aqhdzfsspmuvadnlchvj.supabase.co/functions/v1/koki-command-center-staging-v30/report';
 const AUD='koki-kleinanzeigen-bridge';
-const sessionId=(await fs.readFile('.github/kleinanzeigen-session-id','utf8')).trim();
+let sessionId=String(process.env.SESSION_ID||'').trim();
+if(!sessionId){try{sessionId=(await fs.readFile('.github/kleinanzeigen-session-id','utf8')).trim()}catch{}}
+if(!/^[0-9a-f-]{36}$/i.test(sessionId))throw new Error('bridge_session_missing');
 const tunnelUrl=process.env.TUNNEL_URL;
 const tunnelPassword=process.env.VNC_PASSWORD;
 
