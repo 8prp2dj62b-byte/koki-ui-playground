@@ -1,0 +1,31 @@
+name: KOKI iOS Native CI
+
+on:
+  push:
+    branches:
+      - integration/kleinanzeigen-ios-native
+    paths:
+      - 'ios/KokiNative/**'
+      - '.github/workflows/koki-ios-native-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  build-simulator:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        working-directory: ios/KokiNative
+        run: xcodegen generate
+      - name: Build for iOS Simulator
+        working-directory: ios/KokiNative
+        run: >-
+          xcodebuild
+          -project KokiNative.xcodeproj
+          -scheme KokiNative
+          -sdk iphonesimulator
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO
+          build
