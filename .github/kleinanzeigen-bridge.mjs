@@ -73,7 +73,7 @@ async function act(body){
     await page.keyboard.type(value,{delay:item.type==='password'?55:35});
   }
   lastError='';lastHttp=null;
-  const submit=page.locator('button[type="submit"],input[type="submit"],form button').first();
+  const submit=page.locator('button[type="submit"]:visible,input[type="submit"]:visible,form button:visible').first();
   if(await submit.count())await submit.click();else await page.locator('form').first().evaluate(f=>f.requestSubmit());
   await page.waitForTimeout(1400);
   return snapshot();
@@ -91,7 +91,7 @@ const server=http.createServer(async(req,res)=>{
     if(req.method==='POST'&&u.pathname==='/configure'){
       const b=await readJson(req),url=String(b.tunnel_url||'');
       if(!/^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/i.test(url))return send(res,400,{ok:false,error:'invalid_tunnel'});
-      if(!configured){configured=true;const publicUrl=`${url}?k=${encodeURIComponent(CONTROL_TOKEN)}`;await report('runner_ready',{tunnel_url:publicUrl,tunnel_password:CONTROL_TOKEN});if(page)await report('auth_page_ready')}
+      if(!configured){configured=true;const publicUrl=`${url}/?k=${encodeURIComponent(CONTROL_TOKEN)}`;await report('runner_ready',{tunnel_url:publicUrl,tunnel_password:CONTROL_TOKEN});if(page)await report('auth_page_ready')}
       return send(res,200,{ok:true});
     }
     return send(res,404,{ok:false,error:'not_found'});
