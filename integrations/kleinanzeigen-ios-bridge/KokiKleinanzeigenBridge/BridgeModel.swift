@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Security
 import SwiftUI
 import UIKit
 
@@ -54,7 +55,7 @@ final class BridgeModel: ObservableObject {
         self.pairToken = pairToken
         self.completeURL = complete
         self.returnURL = returnURL
-        self.callbackHandled = false
+        callbackHandled = false
 
         let pkce = makePKCE()
         verifier = pkce.verifier
@@ -117,9 +118,7 @@ final class BridgeModel: ObservableObject {
             return
         }
 
-        Task {
-            await complete(code: code)
-        }
+        Task { await complete(code: code) }
     }
 
     private func complete(code: String) async {
@@ -173,7 +172,7 @@ final class BridgeModel: ObservableObject {
 
             if let returnURL {
                 try? await Task.sleep(for: .milliseconds(450))
-                await UIApplication.shared.open(returnURL)
+                _ = await UIApplication.shared.open(returnURL)
             }
         } catch {
             finishWithError("Свързването с KOKI не завърши: \(error.localizedDescription)")
