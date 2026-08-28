@@ -4,11 +4,8 @@
   "private": true,
   "type": "module",
   "engines": { "node": ">=20" },
-  "scripts": {
-    "start": "node api/index.js"
-  },
   "dependencies": {
-    "@sparticuz/chromium-min": "^138.0.2",
+    "@sparticuz/chromium": "^138.0.2",
     "puppeteer-core": "^24.16.0"
   }
 }
