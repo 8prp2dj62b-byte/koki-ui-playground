@@ -1,0 +1,33 @@
+name: KOKI iOS Bridge Build
+
+on:
+  push:
+    paths:
+      - 'native/ios/KokiBridge/**'
+      - '.github/workflows/koki-ios-bridge-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: native/ios/KokiBridge
+        run: xcodegen generate
+      - name: Build for iOS Simulator
+        working-directory: native/ios/KokiBridge
+        run: >-
+          xcodebuild
+          -project KokiBridge.xcodeproj
+          -scheme KokiBridge
+          -sdk iphonesimulator
+          -configuration Debug
+          CODE_SIGNING_ALLOWED=NO
+          build
