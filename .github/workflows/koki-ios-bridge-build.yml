@@ -5,6 +5,10 @@ on:
     paths:
       - 'native/ios/KokiBridge/**'
       - '.github/workflows/koki-ios-bridge-build.yml'
+  pull_request:
+    paths:
+      - 'native/ios/KokiBridge/**'
+      - '.github/workflows/koki-ios-bridge-build.yml'
   workflow_dispatch:
 
 permissions:
