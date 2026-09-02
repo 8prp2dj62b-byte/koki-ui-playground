@@ -35,7 +35,6 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
         super.onCreate(savedInstanceState);
         getWindow().setStatusBarColor(Color.rgb(238, 242, 247));
         getWindow().setNavigationBarColor(Color.rgb(238, 242, 247));
-
         nfcAdapter = NfcAdapter.getDefaultAdapter(this);
         webView = new WebView(this);
         configureWebView(webView);
@@ -54,10 +53,8 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
         s.setMediaPlaybackRequiresUserGesture(true);
         s.setSafeBrowsingEnabled(true);
         s.setUserAgentString(s.getUserAgentString() + " KOKI-Android/0.1.0");
-
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(view, false);
-
         view.addJavascriptInterface(new NfcBridge(), "kokiNfcIdCard");
         view.setWebViewClient(new WebViewClient() {
             @Override
@@ -112,13 +109,9 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
             payload.put("supported", present && enabled);
             payload.put("platform", "android");
             payload.put("version", 1);
-            if (!present) {
-                payload.put("message", "Този Android телефон няма NFC хардуер.");
-            } else if (!enabled) {
-                payload.put("message", "NFC е изключен. Включи NFC от настройките на телефона и опитай отново.");
-            } else {
-                payload.put("message", "Android NFC четецът е готов.");
-            }
+            if (!present) payload.put("message", "Този Android телефон няма NFC хардуер.");
+            else if (!enabled) payload.put("message", "NFC е изключен. Включи NFC от настройките на телефона и опитай отново.");
+            else payload.put("message", "Android NFC четецът е готов.");
         } catch (Exception ignored) {
         }
         callback("__KOKI_NFC_ID_CARD_CAPABILITY__", payload);
@@ -136,9 +129,7 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
         waitingForCard.set(true);
         Bundle extras = new Bundle();
         extras.putInt(NfcAdapter.EXTRA_READER_PRESENCE_CHECK_DELAY, 150);
-        int flags = NfcAdapter.FLAG_READER_NFC_A
-                | NfcAdapter.FLAG_READER_NFC_B
-                | NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK;
+        int flags = NfcAdapter.FLAG_READER_NFC_A | NfcAdapter.FLAG_READER_NFC_B | NfcAdapter.FLAG_READER_SKIP_NDEF_CHECK;
         nfcAdapter.enableReaderMode(this, this, flags, extras);
     }
 
@@ -162,7 +153,6 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
             byte[] response = isoDep.transceive(SELECT_ICAO_APPLET);
             String sw = statusWord(response);
             boolean icaoSelected = "9000".equals(sw);
-
             payload.put("ok", true);
             payload.put("stage", "chip_detected");
             payload.put("platform", "android");
@@ -170,7 +160,6 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
             payload.put("message", icaoSelected
                     ? "NFC чипът е разпознат и ICAO/eMRTD приложението отговори успешно (SW 9000)."
                     : "ISO-DEP чипът е разпознат. ICAO SELECT върна SW " + sw + ".");
-
             data.put("authenticity", icaoSelected
                     ? "ICAO/eMRTD applet открит · SW 9000"
                     : "ISO-DEP открит · ICAO SELECT SW " + sw);
@@ -217,7 +206,7 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
         if (n != null && n.toLowerCase(Locale.ROOT).contains("taglost")) {
             return "Връзката с NFC картата се прекъсна. Задръж телефона неподвижно върху картата и опитай отново.";
         }
-        if (m == null || m.isBlank()) m = n;
+        if (m == null || m.trim().isEmpty()) m = n;
         return "NFC комуникацията не завърши: " + m;
     }
 
@@ -244,11 +233,8 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
 
     @Override
     public void onBackPressed() {
-        if (webView != null && webView.canGoBack()) {
-            webView.goBack();
-        } else {
-            super.onBackPressed();
-        }
+        if (webView != null && webView.canGoBack()) webView.goBack();
+        else super.onBackPressed();
     }
 
     @Override
@@ -271,9 +257,7 @@ public final class MainActivity extends Activity implements NfcAdapter.ReaderCal
     private static byte[] hex(String value) {
         int len = value.length();
         byte[] out = new byte[len / 2];
-        for (int i = 0; i < len; i += 2) {
-            out[i / 2] = (byte) Integer.parseInt(value.substring(i, i + 2), 16);
-        }
+        for (int i = 0; i < len; i += 2) out[i / 2] = (byte) Integer.parseInt(value.substring(i, i + 2), 16);
         return out;
     }
 }
