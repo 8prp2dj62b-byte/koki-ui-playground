@@ -17,6 +17,31 @@ const banskoRequest: PropertySearchRequest = {
   freeTextConstraints: [],
 };
 
+const slivenHouseRequest: PropertySearchRequest = {
+  operation: 'search_properties',
+  transaction: 'sale',
+  propertyTypes: ['house'],
+  location: { city: 'Сливен' },
+  requiredFeatures: [],
+  preferredFeatures: [],
+  excludedFeatures: [],
+  freeTextConstraints: [],
+};
+
+const taxonomyHtml = `
+  <html><body>
+    <a href="/obiavi/prodazhbi/grad-sliven">Имоти град Сливен</a>
+    <a href="/obiavi/prodazhbi/oblast-sliven">Имоти област Сливен</a>
+    <a href="/obiavi/prodazhbi/oblast-sliven/gr-sliven">гр. Сливен в област Сливен</a>
+    <a href="/obiavi/prodazhbi/oblast-blagoevgrad/gr-bansko">гр. Банско</a>
+  </body></html>`;
+
+const taxonomyFetch: typeof fetch = async (input) => {
+  const url = String(input);
+  if (url.includes('/sitemap/obiavi/prodazhbi')) return new Response(taxonomyHtml, { status: 200 });
+  return new Response('', { status: 200 });
+};
+
 test('Gemini JSON contract is accepted 1:1', () => {
   assert.doesNotThrow(() => assertPropertySearchRequest(banskoRequest));
 });
@@ -26,11 +51,19 @@ test('contract rejects source-specific URLs from Gemini', () => {
   assert.throws(() => assertPropertySearchRequest(bad), /SOURCE_SPECIFIC_VALUE_FORBIDDEN/);
 });
 
-test('Bansko 3-room request maps to the known public imot.bg route', () => {
-  const client = new ImotClient(undefined, async () => new Response(''));
+test('Bansko 3-room request maps through imot.bg taxonomy to the public route', async () => {
+  const client = new ImotClient(undefined, taxonomyFetch);
   assert.equal(
-    client.buildSearchUrl(banskoRequest),
+    await client.buildSearchUrl(banskoRequest),
     'https://www.imot.bg/obiavi/prodazhbi/oblast-blagoevgrad/gr-bansko/tristaen'
+  );
+});
+
+test('Sliven house request resolves dynamically instead of failing hardcoded city taxonomy', async () => {
+  const client = new ImotClient(undefined, taxonomyFetch);
+  assert.equal(
+    await client.buildSearchUrl(slivenHouseRequest),
+    'https://www.imot.bg/obiavi/prodazhbi/grad-sliven/kashta'
   );
 });
 
@@ -40,7 +73,7 @@ test('search parser only returns real /obiava-* links and deduplicates by listin
     <html><body>
       <article>
         <a href="/obiava-1c178281172887622-real-one" title="Тристаен Банско">Тристаен Банско</a>
-        <span>120 000 €</span><span>90 м²</span><span>1 333 €/м²</span>
+        <span>120 000 €</span><span>90 м²</span><span>1 333 €/m²</span>
         <img src="https://imotstatic2.focus.bg/imot/photos/test.jpg">
       </article>
       <article><a href="/search/prodazhbi">not a listing</a></article>

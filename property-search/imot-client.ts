@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import { ImotTaxonomyResolver } from './imot-taxonomy.js';
 import {
   assertPropertySearchRequest,
   type PropertyListing,
@@ -29,34 +30,25 @@ const TYPE_SLUG: Partial<Record<PropertyType, string>> = {
   warehouse: 'sklad',
 };
 
-const CITY_ROUTE: Record<string, string> = {
-  bansko: 'oblast-blagoevgrad/gr-bansko',
-  'банско': 'oblast-blagoevgrad/gr-bansko',
-  sofia: 'grad-sofiya',
-  'софия': 'grad-sofiya',
-  plovdiv: 'grad-plovdiv',
-  'пловдив': 'grad-plovdiv',
-  varna: 'grad-varna',
-  'варна': 'grad-varna',
-  burgas: 'grad-burgas',
-  'бургас': 'grad-burgas',
-};
-
 export interface ListingCache {
   get(listingId: string): Promise<PropertyListing | null>;
   put(listing: PropertyListing): Promise<void>;
 }
 
 export class ImotClient {
+  private readonly taxonomy: ImotTaxonomyResolver;
+
   constructor(
     private readonly cache?: ListingCache,
     private readonly fetchImpl: typeof fetch = fetch,
-  ) {}
+  ) {
+    this.taxonomy = new ImotTaxonomyResolver(fetchImpl);
+  }
 
   async search(input: PropertySearchRequest): Promise<PropertySearchResult> {
     assertPropertySearchRequest(input);
     const request = input;
-    const baseUrl = this.buildSearchUrl(request);
+    const baseUrl = await this.buildSearchUrl(request);
     const summaries = new Map<string, PropertyListingSummary>();
     let pagesFetched = 0;
     let rejected = 0;
@@ -118,17 +110,16 @@ export class ImotClient {
     return this.parseListingPage(html, parsed.toString(), listingId);
   }
 
-  buildSearchUrl(request: PropertySearchRequest): string {
+  async buildSearchUrl(request: PropertySearchRequest): Promise<string> {
     if (!request.transaction) throw new Error('IMOT_TRANSACTION_REQUIRED');
     if (request.propertyTypes.length !== 1) throw new Error('IMOT_V1_REQUIRES_ONE_PROPERTY_TYPE');
-    const city = request.location.city?.trim().toLocaleLowerCase('bg-BG');
-    if (!city) throw new Error('IMOT_CITY_REQUIRED');
-    const cityRoute = CITY_ROUTE[city];
-    if (!cityRoute) throw new Error(`IMOT_TAXONOMY_RESOLUTION_FAILED:${request.location.city}`);
+
     const typeRoute = TYPE_SLUG[request.propertyTypes[0]];
     if (!typeRoute) throw new Error(`IMOT_PROPERTY_TYPE_UNSUPPORTED:${request.propertyTypes[0]}`);
-    const transaction = request.transaction === 'sale' ? 'prodazhbi' : 'naemi';
-    return `${BASE}/obiavi/${transaction}/${cityRoute}/${typeRoute}`;
+
+    const transaction: 'prodazhbi' | 'naemi' = request.transaction === 'sale' ? 'prodazhbi' : 'naemi';
+    const locationRoute = await this.taxonomy.resolveLocationRoute(request.location, transaction);
+    return `${BASE}/obiavi/${transaction}/${locationRoute}/${typeRoute}`;
   }
 
   parseSearchPage(html: string, pageUrl: string): PropertyListingSummary[] {
