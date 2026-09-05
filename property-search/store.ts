@@ -7,6 +7,7 @@ export type MatchState = 'NEW' | 'SEEN' | 'SAVED' | 'DISMISSED' | 'INACTIVE';
 
 export interface SavedSearchRow {
   id: string;
+  ownerKey: string;
   title: string;
   originalText: string;
   request: PropertySearchRequest;
@@ -56,6 +57,7 @@ export class PropertySearchStore implements ListingCache {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS property_saved_searches (
         id TEXT PRIMARY KEY,
+        owner_key TEXT NOT NULL,
         title TEXT NOT NULL,
         original_text TEXT NOT NULL,
         request_json TEXT NOT NULL,
@@ -97,8 +99,8 @@ export class PropertySearchStore implements ListingCache {
         error_code TEXT
       );
 
-      CREATE INDEX IF NOT EXISTS idx_property_search_status
-        ON property_saved_searches(status);
+      CREATE INDEX IF NOT EXISTS idx_property_search_owner_status
+        ON property_saved_searches(owner_key, status);
       CREATE INDEX IF NOT EXISTS idx_property_match_search_state
         ON property_search_matches(search_id, state);
     `);
@@ -128,53 +130,53 @@ export class PropertySearchStore implements ListingCache {
     `).run(listing.listingId, listing.canonicalUrl, payload, hash, now, now);
   }
 
-  createSearch(input: { title: string; originalText: string; request: PropertySearchRequest }) {
+  createSearch(input: { ownerKey: string; title: string; originalText: string; request: PropertySearchRequest }) {
+    const ownerKey = requireOwnerKey(input.ownerKey);
     const now = new Date().toISOString();
     const id = crypto.randomUUID();
     this.db.prepare(`
       INSERT INTO property_saved_searches
-        (id, title, original_text, request_json, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'active', ?, ?)
-    `).run(id, input.title, input.originalText, JSON.stringify(input.request), now, now);
-    return this.getSearch(id)!;
+        (id, owner_key, title, original_text, request_json, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+    `).run(id, ownerKey, input.title, input.originalText, JSON.stringify(input.request), now, now);
+    return this.getSearch(ownerKey, id)!;
   }
 
-  getSearch(id: string): SavedSearchRow | null {
+  getSearch(ownerKey: string, id: string): SavedSearchRow | null {
+    ownerKey = requireOwnerKey(ownerKey);
     const row = this.db.prepare(`
-      SELECT id,title,original_text,request_json,status,created_at,updated_at,last_run_at
-      FROM property_saved_searches WHERE id = ?
-    `).get(id) as any;
+      SELECT id,owner_key,title,original_text,request_json,status,created_at,updated_at,last_run_at
+      FROM property_saved_searches WHERE id = ? AND owner_key = ?
+    `).get(id, ownerKey) as any;
     if (!row) return null;
-    return {
-      id: row.id,
-      title: row.title,
-      originalText: row.original_text,
-      request: JSON.parse(row.request_json),
-      status: row.status,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      lastRunAt: row.last_run_at,
-    };
+    return mapSearchRow(row);
   }
 
-  updateSearchRequest(id: string, originalText: string, request: PropertySearchRequest) {
+  updateSearchRequest(ownerKey: string, id: string, originalText: string, request: PropertySearchRequest) {
+    ownerKey = requireOwnerKey(ownerKey);
     const now = new Date().toISOString();
     this.db.prepare(`
       UPDATE property_saved_searches
       SET original_text = ?, request_json = ?, updated_at = ?
-      WHERE id = ?
-    `).run(originalText, JSON.stringify(request), now, id);
-    return this.getSearch(id);
+      WHERE id = ? AND owner_key = ?
+    `).run(originalText, JSON.stringify(request), now, id, ownerKey);
+    return this.getSearch(ownerKey, id);
   }
 
-  listActiveSearches() {
-    const ids = this.db.prepare(`SELECT id FROM property_saved_searches WHERE status = 'active' ORDER BY created_at`).all() as { id: string }[];
-    return ids.map(r => this.getSearch(r.id)!).filter(Boolean);
+  listActiveSearches(): SavedSearchRow[] {
+    const rows = this.db.prepare(`
+      SELECT id,owner_key,title,original_text,request_json,status,created_at,updated_at,last_run_at
+      FROM property_saved_searches
+      WHERE status = 'active'
+      ORDER BY created_at
+    `).all() as any[];
+    return rows.map(mapSearchRow);
   }
 
-  setSearchStatus(id: string, status: SavedSearchRow['status']) {
-    this.db.prepare(`UPDATE property_saved_searches SET status=?,updated_at=? WHERE id=?`)
-      .run(status, new Date().toISOString(), id);
+  setSearchStatus(ownerKey: string, id: string, status: SavedSearchRow['status']) {
+    ownerKey = requireOwnerKey(ownerKey);
+    this.db.prepare(`UPDATE property_saved_searches SET status=?,updated_at=? WHERE id=? AND owner_key=?`)
+      .run(status, new Date().toISOString(), id, ownerKey);
   }
 
   startRun(searchId: string) {
@@ -292,4 +294,24 @@ export class PropertySearchStore implements ListingCache {
       WHERE search_id=? AND source_listing_id=?
     `).run(state, new Date().toISOString(), searchId, listingId);
   }
+}
+
+function mapSearchRow(row: any): SavedSearchRow {
+  return {
+    id: row.id,
+    ownerKey: row.owner_key,
+    title: row.title,
+    originalText: row.original_text,
+    request: JSON.parse(row.request_json),
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lastRunAt: row.last_run_at,
+  };
+}
+
+function requireOwnerKey(value: string) {
+  const owner = String(value || '').trim();
+  if (!owner || owner.length > 256) throw new Error('OWNER_REQUIRED');
+  return owner;
 }
