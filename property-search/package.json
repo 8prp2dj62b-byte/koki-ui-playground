@@ -1,0 +1,20 @@
+{
+  "name": "koki-property-search",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "refresh:daily": "tsx daily-refresh.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.2.0",
+    "cheerio": "^1.1.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.3.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}
