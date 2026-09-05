@@ -1,5 +1,5 @@
 import { assertPropertySearchRequest, type PropertySearchRequest } from './types.js';
-import type { ImotGeminiNomenclature } from './imot-taxonomy.js';
+import { imotSlug, type ImotGeminiNomenclature } from './imot-taxonomy.js';
 import { buildPropertySearchUserPrompt, PROPERTY_SEARCH_SYSTEM_PROMPT } from './gemini-prompt.js';
 
 export interface PropertySearchAddition {
@@ -48,7 +48,7 @@ export class GeminiPropertySearchCompiler {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const result = await this.callGemini(clean, nomenclature, currentRequest);
-        return validateCompilation(result);
+        return validateCompilation(result, nomenclature);
       } catch (error) {
         lastError = error;
       }
@@ -92,7 +92,7 @@ export class GeminiPropertySearchCompiler {
   }
 }
 
-function validateCompilation(value: unknown): PropertySearchCompilation {
+function validateCompilation(value: unknown, nomenclature: ImotGeminiNomenclature): PropertySearchCompilation {
   if (!value || typeof value !== 'object') throw new Error('INTENT_COMPILATION_INVALID_ENVELOPE');
   const candidate = value as Record<string, unknown>;
 
@@ -102,6 +102,7 @@ function validateCompilation(value: unknown): PropertySearchCompilation {
     if (!request.transaction) throw new Error('INTENT_READY_TRANSACTION_REQUIRED');
     if (request.propertyTypes.length !== 1) throw new Error('INTENT_READY_ONE_PROPERTY_TYPE_REQUIRED');
     if (!request.location.city && !request.location.district) throw new Error('INTENT_READY_LOCATION_REQUIRED');
+    validateReadyAgainstNomenclature(request, nomenclature);
     return { status: 'ready', request, additions: [] };
   }
 
@@ -118,6 +119,35 @@ function validateCompilation(value: unknown): PropertySearchCompilation {
   }
 
   throw new Error('INTENT_COMPILATION_INVALID_STATUS');
+}
+
+function validateReadyAgainstNomenclature(request: PropertySearchRequest, nomenclature: ImotGeminiNomenclature) {
+  const type = request.propertyTypes[0];
+  const typeEntry = nomenclature.propertyTypes.find(item => item.requestValue === type);
+  if (!typeEntry || !typeEntry.sourceSlug) {
+    throw new Error(`INTENT_READY_PROPERTY_TYPE_NOT_IN_NOMENCLATURE:${type}`);
+  }
+
+  const routes = request.transaction === 'sale'
+    ? nomenclature.locationRoutes.sale
+    : nomenclature.locationRoutes.rent;
+
+  const citySlug = request.location.city ? imotSlug(request.location.city) : '';
+  const districtSlug = request.location.district ? imotSlug(request.location.district) : '';
+
+  const matchesLocation = routes.some(route => {
+    const segments = route.split('/').filter(Boolean);
+    const cityMatches = !citySlug
+      || segments.includes(`grad-${citySlug}`)
+      || segments.includes(`gr-${citySlug}`);
+    const districtMatches = !districtSlug || segments.includes(`oblast-${districtSlug}`);
+    return cityMatches && districtMatches;
+  });
+
+  if (!matchesLocation) {
+    const value = request.location.city || request.location.district || '';
+    throw new Error(`INTENT_READY_LOCATION_NOT_IN_NOMENCLATURE:${value}`);
+  }
 }
 
 function validateAddition(value: unknown): PropertySearchAddition {
