@@ -1,5 +1,6 @@
 import { GeminiPropertySearchCompiler } from './gemini-compiler.js';
 import { ImotClient } from './imot-client-live.js';
+import { ImotTaxonomyResolver } from './imot-taxonomy.js';
 import { PropertySearchStore } from './store.js';
 import type { PropertySearchRequest } from './types.js';
 
@@ -14,17 +15,29 @@ export class PropertySearchService {
     geminiModel?: string;
   }) {
     const key = options?.geminiApiKey || process.env.GEMINI_API_KEY || '';
+    const taxonomy = new ImotTaxonomyResolver();
     this.store = new PropertySearchStore(options?.dbPath);
     this.compiler = new GeminiPropertySearchCompiler({
       apiKey: key,
       model: options?.geminiModel || process.env.GEMINI_MODEL || undefined,
+      nomenclatureProvider: () => taxonomy.getGeminiNomenclature(),
     });
     this.client = new ImotClient(this.store);
   }
 
   async createSearch(ownerKey: string, input: { text: string; title?: string }) {
     const owner = requireOwner(ownerKey);
-    const request = await this.compiler.compile(input.text);
+    const compilation = await this.compiler.compile(input.text);
+    if (compilation.status === 'needs_input') {
+      return {
+        needsInput: true as const,
+        additions: compilation.additions,
+        search: null,
+        results: [],
+      };
+    }
+
+    const request = compilation.request;
     const title = input.title?.trim() || this.defaultTitle(request);
     const saved = this.store.createSearch({
       ownerKey: owner,
@@ -33,17 +46,27 @@ export class PropertySearchService {
       request,
     });
     const run = await this.refreshSearch(owner, saved.id);
-    return { search: this.store.getSearch(owner, saved.id), ...run };
+    return { needsInput: false as const, additions: [], search: this.store.getSearch(owner, saved.id), ...run };
   }
 
   async addCriterion(ownerKey: string, searchId: string, text: string) {
     const owner = requireOwner(ownerKey);
     const current = this.requireSearch(owner, searchId);
-    const request = await this.compiler.compile(text, current.request);
+    const compilation = await this.compiler.compile(text, current.request);
+    if (compilation.status === 'needs_input') {
+      return {
+        needsInput: true as const,
+        additions: compilation.additions,
+        search: current,
+        results: this.store.listResults(searchId),
+      };
+    }
+
+    const request = compilation.request;
     const mergedText = `${current.originalText}\n+ ${text}`;
     this.store.updateSearchRequest(owner, searchId, mergedText, request);
     const run = await this.refreshSearch(owner, searchId);
-    return { search: this.store.getSearch(owner, searchId), ...run };
+    return { needsInput: false as const, additions: [], search: this.store.getSearch(owner, searchId), ...run };
   }
 
   async refreshSearch(ownerKey: string, searchId: string) {
@@ -52,7 +75,7 @@ export class PropertySearchService {
     if (search.status !== 'active') throw new Error('SEARCH_NOT_ACTIVE');
     const runId = this.store.startRun(searchId);
     try {
-      // Critical architecture rule: saved Gemini JSON enters ImotClient 1:1.
+      // Only a READY Gemini request enters ImotClient, unchanged 1:1.
       const result = await this.client.search(search.request);
       const delta = this.store.reconcile(searchId, result.listings);
       this.store.finishRun(runId, {
@@ -127,7 +150,7 @@ export class PropertySearchService {
 
   private defaultTitle(request: PropertySearchRequest) {
     const type = request.propertyTypes[0] || 'Имот';
-    const city = request.location.city || '';
+    const city = request.location.city || request.location.district || '';
     return `${type} ${city}`.trim();
   }
 }
