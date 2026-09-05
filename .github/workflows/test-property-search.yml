@@ -1,0 +1,38 @@
+name: Test KOKI property search
+
+on:
+  pull_request:
+    paths:
+      - 'property-search/**'
+      - '.github/workflows/test-property-search.yml'
+      - 'index.html'
+  push:
+    branches:
+      - 'feature/koki-property-search-imot-v1'
+    paths:
+      - 'property-search/**'
+      - '.github/workflows/test-property-search.yml'
+      - 'index.html'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: property-search
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: property-search/package.json
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - run: node --check buy-entry.js
+      - run: node --check create-menu.js
+      - name: Verify property search loader
+        run: grep -Fq '<script src="./property-search/buy-entry.js"></script>' ../index.html
+      - name: Verify grouped create menu loader
+        run: grep -Fq '<script src="./property-search/create-menu.js"></script>' ../index.html
