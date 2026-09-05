@@ -1,0 +1,121 @@
+name: Diagnostic KOKI primary logs
+
+on:
+  push:
+    branches:
+      - diagnostic/koki-primary-log-check-20260905
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 5
+    steps:
+      - name: Host identity and deployed code
+        shell: bash
+        run: |
+          set +e
+          echo "=== HOST ==="
+          date --iso-8601=seconds
+          hostname
+          whoami
+          pwd
+          echo "=== KOKI SERVICES ==="
+          systemctl list-units --type=service --all --no-pager 2>/dev/null | grep -Ei 'koki|property|node|nginx|caddy' | head -n 120 || true
+          echo "=== PROCESSES ==="
+          ps -eo pid,lstart,cmd --sort=-lstart | grep -Ei 'koki|property-search|node|tsx' | grep -v grep | head -n 120 || true
+          echo "=== LISTENERS ==="
+          ss -ltnp 2>/dev/null | head -n 80 || true
+          echo "=== LIKELY DEPLOY DIRS / COMMITS ==="
+          for d in /opt/koki /srv/koki /home/ubuntu/koki /home/ubuntu/koki-ui-playground /var/www/koki; do
+            if [ -d "$d" ]; then
+              echo "DIR=$d"
+              git -C "$d" rev-parse HEAD 2>/dev/null || true
+              git -C "$d" status --short --branch 2>/dev/null | head -n 20 || true
+            fi
+          done
+
+      - name: Recent property-search and Gemini journal lines
+        shell: bash
+        run: |
+          set +e
+          tmp="$(mktemp)"
+          if sudo -n true 2>/dev/null; then
+            sudo -n journalctl --since "60 minutes ago" --no-pager -o short-iso > "$tmp" 2>/dev/null || true
+          else
+            journalctl --since "60 minutes ago" --no-pager -o short-iso > "$tmp" 2>/dev/null || true
+          fi
+          echo "=== MATCHING JOURNAL LINES (last 60m) ==="
+          grep -Eai 'къща бяла|бяла|100m|100м|150к|150k|property-search|gemini|IMOT_|INTENT_|/api/property-search|searches' "$tmp" \
+            | tail -n 1500 \
+            | sed -E 's/(key=)[^&[:space:]]+/\1[REDACTED]/g; s/(Bearer )[A-Za-z0-9._~+\/-]+/\1[REDACTED]/g; s/(GEMINI_API_KEY=)[^[:space:]]+/\1[REDACTED]/g; s/(Authorization: )[^"]+/\1[REDACTED]/g' || true
+          rm -f "$tmp"
+
+      - name: Find recent KOKI log files and exact test text
+        shell: bash
+        run: |
+          set +e
+          echo "=== RECENT LOG FILES ==="
+          roots=(/var/log /var/lib/koki /opt/koki /srv/koki /home/ubuntu)
+          for root in "${roots[@]}"; do
+            [ -d "$root" ] || continue
+            find "$root" -maxdepth 5 -type f \( -name '*.log' -o -name '*.out' -o -name '*.err' \) -mmin -120 -size -20M 2>/dev/null \
+              | grep -Ei 'koki|property|node|app|server' | head -n 120
+          done
+          echo "=== EXACT/RELATED TEXT IN RECENT LOGS ==="
+          for root in "${roots[@]}"; do
+            [ -d "$root" ] || continue
+            while IFS= read -r f; do
+              grep -EaiH 'къща бяла|бяла|100m|100м|150к|150k|property-search|gemini|IMOT_|INTENT_' "$f" 2>/dev/null \
+                | tail -n 300 \
+                | sed -E 's/(key=)[^&[:space:]]+/\1[REDACTED]/g; s/(Bearer )[A-Za-z0-9._~+\/-]+/\1[REDACTED]/g; s/(GEMINI_API_KEY=)[^[:space:]]+/\1[REDACTED]/g' || true
+            done < <(find "$root" -maxdepth 5 -type f \( -name '*.log' -o -name '*.out' -o -name '*.err' \) -mmin -120 -size -20M 2>/dev/null | head -n 200)
+          done
+
+      - name: Inspect property-search SQLite for the submitted test
+        shell: bash
+        run: |
+          set +e
+          echo "=== PROPERTY SEARCH SQLITE ==="
+          python3 - <<'PY'
+          import os, sqlite3, json
+          roots = ['/var/lib/koki','/opt/koki','/srv/koki','/home/ubuntu']
+          seen=set()
+          for root in roots:
+              if not os.path.isdir(root):
+                  continue
+              for base, dirs, files in os.walk(root):
+                  rel=os.path.relpath(base, root)
+                  if rel.count(os.sep) >= 5:
+                      dirs[:] = []
+                      continue
+                  dirs[:] = [d for d in dirs if d not in {'.git','node_modules','.cache','actions-runner'}]
+                  for fn in files:
+                      if not (fn.endswith('.sqlite') or fn.endswith('.db')):
+                          continue
+                      p=os.path.join(base,fn)
+                      if p in seen: continue
+                      seen.add(p)
+                      try:
+                          con=sqlite3.connect(f'file:{p}?mode=ro', uri=True)
+                          tables=[r[0] for r in con.execute("select name from sqlite_master where type='table'")]
+                          cols={t:[r[1] for r in con.execute(f'pragma table_info(\"{t}\")')] for t in tables}
+                          interesting=[t for t,c in cols.items() if any('original' in x.lower() or 'request' in x.lower() or 'search' in x.lower() for x in c)]
+                          if not interesting:
+                              con.close(); continue
+                          print('DB',p,'TABLES',interesting)
+                          for t in interesting:
+                              c=cols[t]
+                              textcols=[x for x in c if any(k in x.lower() for k in ['original','text','request','query','title'])]
+                              if not textcols: continue
+                              rows=con.execute(f'SELECT * FROM "{t}" ORDER BY rowid DESC LIMIT 50').fetchall()
+                              for row in rows:
+                                  obj=dict(zip(c,row))
+                                  blob=' '.join(str(obj.get(x,'')) for x in textcols)
+                                  if any(k in blob.lower() for k in ['бяла','150к','150k','100м','100m']):
+                                      # keep only search-level fields; never dump auth/session-like columns
+                                      safe={k:v for k,v in obj.items() if not any(s in k.lower() for s in ['token','secret','password','cookie','auth','session','key'])}
+                                      print('MATCH',t,json.dumps(safe,ensure_ascii=False,default=str))
+                          con.close()
+                      except Exception as e:
+                          pass
+          PY
