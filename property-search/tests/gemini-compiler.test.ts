@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GeminiPropertySearchCompiler } from '../gemini-compiler.js';
+import { PROPERTY_SEARCH_SYSTEM_PROMPT } from '../gemini-prompt.js';
 import type { ImotGeminiNomenclature } from '../imot-taxonomy.js';
 
 const nomenclature: ImotGeminiNomenclature = {
@@ -40,6 +41,16 @@ function geminiResponse(value: unknown) {
   }), { status: 200, headers: { 'content-type': 'application/json' } });
 }
 
+test('system prompt teaches Bulgarian real-estate shorthand and bare-settlement semantics', () => {
+  assert.match(PROPERTY_SEARCH_SYSTEM_PROMPT, /3стайка/);
+  assert.match(PROPERTY_SEARCH_SYSTEM_PROMPT, /тристайка/);
+  assert.match(PROPERTY_SEARCH_SYSTEM_PROMPT, /propertyTypes=\["3-room"\]/);
+  assert.match(PROPERTY_SEARCH_SYSTEM_PROMPT, /"3стайка банско"/i);
+  assert.match(PROPERTY_SEARCH_SYSTEM_PROMPT, /"тристайка сливен"/i);
+  assert.match(PROPERTY_SEARCH_SYSTEM_PROMPT, /bare settlement name/i);
+  assert.match(PROPERTY_SEARCH_SYSTEM_PROMPT, /transaction="sale"/);
+});
+
 test('every Gemini call contains the complete supplied imot.bg nomenclature', async () => {
   let sentPrompt = '';
   const compiler = new GeminiPropertySearchCompiler({
@@ -74,7 +85,7 @@ test('every Gemini call contains the complete supplied imot.bg nomenclature', as
   assert.match(sentPrompt, /Тухла/);
 });
 
-test('Gemini can stop execution and return structured additions when mapping is uncertain', async () => {
+test('Gemini can stop execution and return structured additions for genuinely missing meaning', async () => {
   const compiler = new GeminiPropertySearchCompiler({
     apiKey: 'test-key',
     nomenclatureProvider: async () => nomenclature,
@@ -82,22 +93,22 @@ test('Gemini can stop execution and return structured additions when mapping is 
       status: 'needs_input',
       request: null,
       additions: [{
-        field: 'location.scope',
-        reason: 'ambiguous',
-        question: 'Имаш предвид град Сливен или област Сливен?',
+        field: 'propertyTypes',
+        reason: 'missing',
+        question: 'Какъв тип имот търсиш?',
         options: [
-          { label: 'град Сливен', value: 'град Сливен' },
-          { label: 'област Сливен', value: 'област Сливен' },
+          { label: 'Тристаен апартамент', value: 'тристаен апартамент' },
+          { label: 'Къща', value: 'къща' },
         ],
       }],
     }),
   });
 
-  const result = await compiler.compile('Къща Сливен');
+  const result = await compiler.compile('Имот в Сливен');
   assert.equal(result.status, 'needs_input');
   if (result.status === 'needs_input') {
-    assert.equal(result.additions[0].reason, 'ambiguous');
-    assert.deepEqual(result.additions[0].options.map(x => x.value), ['град Сливен', 'област Сливен']);
+    assert.equal(result.additions[0].reason, 'missing');
+    assert.deepEqual(result.additions[0].options.map(x => x.value), ['тристаен апартамент', 'къща']);
   }
 });
 
