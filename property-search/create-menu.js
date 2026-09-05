@@ -1,156 +1,133 @@
 (() => {
-  const MENU_ID = 'kokiCreateMenu';
+  const SCREEN_ID = 'create-hub';
 
   function boot() {
     const originalPlus = document.querySelector('.dock .plus');
-    const buy = document.getElementById('buy');
-    if (!originalPlus || !buy || document.getElementById(MENU_ID)) return false;
-
-    // Replace controls that already have legacy anonymous data-go listeners.
-    // Cloning drops those listeners so the chooser is the only create action fired.
-    const plus = originalPlus.cloneNode(true);
-    originalPlus.replaceWith(plus);
-
-    // Property search lives in the global + menu, not as a separate Buy card.
-    removePropertySearchEntry();
-    const observer = new MutationObserver(removePropertySearchEntry);
-    observer.observe(buy, { childList: true, subtree: true });
+    const workspace = document.querySelector('.workspace');
+    if (!originalPlus || !workspace || document.getElementById(SCREEN_ID)) return false;
 
     installStyles();
-    const menu = buildMenu();
-    document.body.appendChild(menu);
+    const screen = buildScreen();
+    workspace.appendChild(screen);
 
+    // Replace the legacy + control so its old anonymous data-go listener cannot also fire.
+    const plus = originalPlus.cloneNode(true);
+    originalPlus.replaceWith(plus);
     plus.removeAttribute('data-go');
-    plus.setAttribute('aria-haspopup', 'dialog');
-    plus.setAttribute('aria-controls', MENU_ID);
-    plus.setAttribute('aria-expanded', 'false');
+    plus.setAttribute('aria-label', 'Ново');
     plus.addEventListener('click', event => {
       event.preventDefault();
       event.stopPropagation();
-      openMenu(menu, plus);
+      openCreateHub();
     });
 
-    // Existing hero create buttons use the same chooser, pre-focused by side.
-    document.querySelectorAll('.new').forEach(originalButton => {
-      const text = (originalButton.textContent || '').toLocaleLowerCase('bg-BG');
-      if (!text.includes('нова покупка') && !text.includes('нова продажба')) return;
-      const button = originalButton.cloneNode(true);
-      originalButton.replaceWith(button);
-      button.removeAttribute('data-go');
-      button.addEventListener('click', event => {
-        event.preventDefault();
-        event.stopPropagation();
-        openMenu(menu, plus, text.includes('покупка') ? 'buy' : 'sell');
-      });
-    });
+    // imot.bg is now entered only from +, not from a separate card in Buy.
+    removePropertySearchEntry();
+    const buy = document.getElementById('buy');
+    if (buy) {
+      new MutationObserver(removePropertySearchEntry).observe(buy, { childList: true, subtree: true });
+    }
 
     return true;
   }
 
-  function removePropertySearchEntry() {
-    document.getElementById('kokiPropertySearchEntry')?.remove();
-  }
+  function buildScreen() {
+    const screen = document.createElement('section');
+    screen.id = SCREEN_ID;
+    screen.className = 'screen kch-screen';
+    screen.innerHTML = `
+      <div class="kch-head">
+        <button class="kch-back" type="button" aria-label="Назад">‹</button>
+        <div class="kch-head-copy">
+          <h1>Ново</h1>
+          <p>Избери какво и къде искаш да направиш</p>
+        </div>
+        <div class="kch-head-spacer" aria-hidden="true"></div>
+      </div>
 
-  function buildMenu() {
-    const overlay = document.createElement('div');
-    overlay.id = MENU_ID;
-    overlay.className = 'kcm-overlay';
-    overlay.setAttribute('aria-hidden', 'true');
-    overlay.innerHTML = `
-      <section class="kcm-sheet" role="dialog" aria-modal="true" aria-labelledby="kcmTitle">
-        <div class="kcm-grabber" aria-hidden="true"></div>
-        <header class="kcm-head">
+      <section class="kch-group" aria-labelledby="kchBuyTitle">
+        <div class="kch-group-head">
+          <span class="kch-direction kch-direction-buy" aria-hidden="true">↓</span>
           <div>
-            <div class="eyebrow">НОВО</div>
-            <h2 id="kcmTitle">Какво искаш да направиш?</h2>
-          </div>
-          <button class="kcm-close" type="button" aria-label="Затвори">×</button>
-        </header>
-
-        <div class="kcm-section" data-kcm-section="buy">
-          <div class="kcm-section-title">
-            <span class="kcm-direction kcm-buy">↓</span>
-            <div><strong>Купува</strong><small>Създай ново търсене или покупка</small></div>
-          </div>
-          <div class="kcm-grid">
-            ${platformCard('olx-buy', 'olx', 'OLX', 'Нова покупка')}
-            ${platformCard('ka-buy', 'ka', 'Kleinanzeigen', 'Нова покупка')}
-            ${platformCard('imot-buy', 'imot', 'imot.bg', 'Нова покупка')}
+            <h2 id="kchBuyTitle">Купува</h2>
+            <p>Създай нова покупка или търсене</p>
           </div>
         </div>
+        <div class="kch-card">
+          ${row('ka-buy', 'ka', 'KLEINANZEIGEN', 'Нова покупка в Kleinanzeigen', 'Коки ще подготви покупката с нужните данни за Kleinanzeigen.')}
+          <div class="kch-separator"></div>
+          ${row('imot-buy', 'imot', 'IMOT.BG', 'Нова покупка в imot.bg', 'Опиши имота на човешки език и Коки ще търси реалните обяви в imot.bg.')}
+        </div>
+      </section>
 
-        <div class="kcm-divider"></div>
-
-        <div class="kcm-section" data-kcm-section="sell">
-          <div class="kcm-section-title">
-            <span class="kcm-direction kcm-sell">↑</span>
-            <div><strong>Продава</strong><small>Публикувай нова обява</small></div>
+      <section class="kch-group" aria-labelledby="kchSellTitle">
+        <div class="kch-group-head">
+          <span class="kch-direction kch-direction-sell" aria-hidden="true">↑</span>
+          <div>
+            <h2 id="kchSellTitle">Продава</h2>
+            <p>Публикувай нова обява</p>
           </div>
-          <div class="kcm-grid kcm-grid-sell">
-            ${platformCard('olx-sell', 'olx', 'OLX', 'Нова продажба')}
-            ${platformCard('ka-sell', 'ka', 'Kleinanzeigen', 'Нова продажба')}
-          </div>
+        </div>
+        <div class="kch-card">
+          ${row('olx-sell', 'olx', 'OLX', 'Продай в OLX', 'Коки ще подготви обявата и ще те преведе до публикуването.')}
+          <div class="kch-separator"></div>
+          ${row('ka-sell', 'ka', 'KLEINANZEIGEN', 'Продай в Kleinanzeigen', 'Коки ще подготви обявата с нужните данни за Kleinanzeigen.')}
         </div>
       </section>`;
 
-    overlay.querySelector('.kcm-close').addEventListener('click', () => closeMenu(overlay));
-    overlay.addEventListener('click', event => {
-      if (event.target === overlay) closeMenu(overlay);
+    screen.querySelector('.kch-back').addEventListener('click', closeCreateHub);
+    screen.querySelectorAll('[data-kch-action]').forEach(button => {
+      button.addEventListener('click', () => runAction(button.dataset.kchAction));
     });
-    overlay.addEventListener('keydown', event => {
-      if (event.key === 'Escape') closeMenu(overlay);
-    });
-    overlay.querySelectorAll('[data-kcm-action]').forEach(button => {
-      button.addEventListener('click', () => {
-        const action = button.dataset.kcmAction;
-        closeMenu(overlay);
-        runAction(action);
-      });
-    });
-    return overlay;
+    return screen;
   }
 
-  function platformCard(action, brandClass, brand, label) {
+  function row(action, platform, eyebrow, title, description) {
     return `
-      <button class="kcm-card" type="button" data-kcm-action="${action}">
-        <span class="kcm-brand kcm-brand-${brandClass}" aria-hidden="true">${brandMarkup(brandClass)}</span>
-        <span class="kcm-card-copy">
-          <strong>${label}</strong>
-          <small>${brand}</small>
+      <button class="kch-row" type="button" data-kch-action="${action}">
+        <span class="kch-logo kch-logo-${platform}" aria-hidden="true">${logo(platform)}</span>
+        <span class="kch-copy">
+          <span class="kch-eyebrow">${eyebrow}</span>
+          <strong>${title}</strong>
+          <small>${description}</small>
         </span>
-        <span class="kcm-chevron" aria-hidden="true">›</span>
+        <span class="kch-chevron" aria-hidden="true">›</span>
       </button>`;
   }
 
-  function brandMarkup(type) {
-    if (type === 'olx') return '<span class="kcm-olx-o">O</span><span class="kcm-olx-l">L</span><span class="kcm-olx-x">X</span>';
-    if (type === 'ka') return '<span class="kcm-ka-mark">K</span>';
-    if (type === 'imot') return '<span class="kcm-imot-mark">imot<span>.bg</span></span>';
+  function logo(platform) {
+    if (platform === 'olx') {
+      return `<svg viewBox="0 0 64 64" role="img" aria-label="OLX"><rect width="64" height="64" rx="18" fill="#23e5db"/><g fill="#002f34"><circle cx="18" cy="32" r="8"/><rect x="29" y="21" width="6" height="22" rx="3"/><path d="M40 22h7l4 7 4-7h7l-7.5 10L62 42h-7l-4-7-4 7h-7l7.5-10z"/></g><circle cx="18" cy="32" r="3.2" fill="#23e5db"/></svg>`;
+    }
+    if (platform === 'ka') {
+      return `<svg viewBox="0 0 64 64" role="img" aria-label="Kleinanzeigen"><rect width="64" height="64" rx="18" fill="#f5f8fb"/><path d="M24 11c-6 0-10 4.6-10 10v22c0 5.4 4 10 10 10 4.8 0 8-2.6 10-6.5V17.5C32 13.6 28.8 11 24 11Z" fill="none" stroke="#65b32e" stroke-width="4" stroke-linejoin="round"/><path d="M34 26c2.1-4.1 5.5-6.3 10-6.3 6.2 0 10.5 4.3 10.5 10.1 0 4.9-2.9 8.2-7.5 9.7l8 9.8H48L38 37.3V52h-4Z" fill="none" stroke="#65b32e" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+    }
+    if (platform === 'imot') {
+      return `<svg viewBox="0 0 64 64" role="img" aria-label="imot.bg"><rect width="64" height="64" rx="18" fill="#ffffff"/><path d="M14 33 32 18l18 15v18H37V39H27v12H14Z" fill="#e5232e"/><rect x="27" y="39" width="10" height="12" fill="#2c5da8"/><text x="32" y="60" text-anchor="middle" font-size="8" font-family="Arial, sans-serif" font-weight="700" fill="#2c5da8">imot.bg</text></svg>`;
+    }
     return '';
   }
 
-  function openMenu(menu, plus, focusSection) {
+  function openCreateHub() {
     removePropertySearchEntry();
-    menu.classList.add('on');
-    menu.setAttribute('aria-hidden', 'false');
-    plus?.setAttribute('aria-expanded', 'true');
-    document.documentElement.classList.add('kcm-open');
-
-    if (focusSection) {
-      const section = menu.querySelector(`[data-kcm-section="${focusSection}"]`);
-      requestAnimationFrame(() => section?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
-    }
-    requestAnimationFrame(() => menu.querySelector('.kcm-close')?.focus());
+    document.querySelectorAll('.screen.on').forEach(screen => screen.classList.remove('on'));
+    document.getElementById(SCREEN_ID)?.classList.add('on');
+    document.querySelectorAll('.navbtn,.dockbtn').forEach(button => button.classList.remove('on'));
+    window.scrollTo(0, 0);
   }
 
-  function closeMenu(menu) {
-    menu.classList.remove('on');
-    menu.setAttribute('aria-hidden', 'true');
-    document.documentElement.classList.remove('kcm-open');
-    document.querySelector('.dock .plus')?.setAttribute('aria-expanded', 'false');
+  function closeCreateHub() {
+    document.getElementById(SCREEN_ID)?.classList.remove('on');
+    if (typeof window.go === 'function') window.go('home');
+    else document.getElementById('home')?.classList.add('on');
   }
 
   function runAction(action) {
+    if (action === 'imot-buy') {
+      openScreen('property-search', 'buy');
+      return;
+    }
+
     const custom = window.KOKI_CREATE_ACTIONS?.[action];
     if (typeof custom === 'function') {
       custom();
@@ -158,23 +135,18 @@
     }
 
     const routeCandidates = {
-      'olx-buy': ['new-buy-olx', 'new-buy'],
-      'ka-buy': ['new-buy-ka', 'new-buy-kleinanzeigen'],
-      'imot-buy': ['property-search'],
+      'ka-buy': ['new-buy-ka', 'new-buy-kleinanzeigen', 'new-buy'],
       'olx-sell': ['new-sale-olx', 'new-sale'],
       'ka-sell': ['new-sale-ka', 'new-sale-kleinanzeigen'],
     }[action] || [];
 
     const route = routeCandidates.find(id => document.getElementById(id));
     if (route) {
-      if (route === 'property-search') openScreen(route, 'buy');
-      else if (typeof window.go === 'function') window.go(route);
+      if (typeof window.go === 'function') window.go(route);
       else openScreen(route, action.endsWith('buy') ? 'buy' : 'sell');
       return;
     }
 
-    // Host adapter: lets the real KOKI OLX / KA flows handle the action without
-    // coupling this visual menu to their current implementation details.
     const [platformKey, side] = action.split('-');
     const platform = platformKey === 'ka' ? 'kleinanzeigen' : platformKey;
     const event = new CustomEvent('koki:create', {
@@ -188,12 +160,21 @@
   }
 
   function openScreen(id, nav) {
+    const target = document.getElementById(id);
+    if (!target) {
+      if (typeof window.toastIt === 'function') window.toastIt('Екранът още не е наличен');
+      return;
+    }
     document.querySelectorAll('.screen.on').forEach(screen => screen.classList.remove('on'));
-    document.getElementById(id)?.classList.add('on');
+    target.classList.add('on');
     document.querySelectorAll('.navbtn,.dockbtn').forEach(button => {
       button.classList.toggle('on', button.dataset.go === nav);
     });
     window.scrollTo(0, 0);
+  }
+
+  function removePropertySearchEntry() {
+    document.getElementById('kokiPropertySearchEntry')?.remove();
   }
 
   function platformLabel(platform) {
@@ -203,24 +184,27 @@
   }
 
   function installStyles() {
-    if (document.getElementById('kokiCreateMenuCss')) return;
+    if (document.getElementById('kokiCreateHubCss')) return;
     const style = document.createElement('style');
-    style.id = 'kokiCreateMenuCss';
+    style.id = 'kokiCreateHubCss';
     style.textContent = `
-      html.kcm-open,html.kcm-open body{overflow:hidden}
-      .kcm-overlay{position:fixed;inset:0;display:none;align-items:flex-end;justify-content:center;padding:18px;background:rgba(8,13,22,.34);backdrop-filter:blur(10px);z-index:120}
-      .kcm-overlay.on{display:flex}
-      .kcm-sheet{width:min(720px,100%);max-height:min(760px,calc(100vh - 36px));overflow:auto;padding:18px;border:1px solid var(--line);border-radius:28px;background:color-mix(in srgb,var(--solid) 94%,transparent);box-shadow:0 32px 90px rgba(10,17,29,.28);backdrop-filter:blur(32px) saturate(150%)}
-      .kcm-grabber{display:none;width:38px;height:4px;border-radius:99px;background:color-mix(in srgb,var(--muted) 35%,transparent);margin:0 auto 12px}
-      .kcm-head{display:flex;align-items:center;gap:12px;margin-bottom:18px}.kcm-head>div{flex:1}.kcm-head h2{margin-top:4px;font-size:22px}.kcm-close{width:38px;height:38px;border:1px solid var(--line);border-radius:13px;background:var(--strong);font-size:22px;line-height:1;cursor:pointer}
-      .kcm-section{scroll-margin-top:10px}.kcm-section-title{display:flex;align-items:center;gap:10px;margin-bottom:10px}.kcm-section-title>div{display:grid;gap:2px}.kcm-section-title strong{font-size:13px}.kcm-section-title small{font-size:9px;color:var(--muted)}
-      .kcm-direction{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;font-weight:900}.kcm-buy{background:rgba(89,105,232,.10);color:var(--blue)}.kcm-sell{background:rgba(19,135,98,.10);color:var(--green)}
-      .kcm-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.kcm-grid-sell{grid-template-columns:repeat(2,minmax(0,1fr))}.kcm-divider{height:1px;background:var(--line);margin:18px 0}
-      .kcm-card{min-width:0;display:grid;grid-template-columns:50px minmax(0,1fr) 16px;gap:10px;align-items:center;text-align:left;padding:12px;border:1px solid var(--line);border-radius:17px;background:var(--strong);cursor:pointer;transition:transform .14s ease,border-color .14s ease,background .14s ease}.kcm-card:active{transform:scale(.985)}.kcm-card:hover{border-color:color-mix(in srgb,var(--blue) 25%,var(--line))}
-      .kcm-card-copy{min-width:0;display:grid;gap:3px}.kcm-card-copy strong{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.kcm-card-copy small{font-size:8px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.kcm-chevron{font-size:20px;color:var(--muted)}
-      .kcm-brand{width:50px;height:50px;border-radius:14px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid var(--line);background:#fff;font-weight:900}.kcm-brand-olx{gap:0;font-size:15px;letter-spacing:-.16em;padding-right:3px}.kcm-olx-o{color:#23e5db}.kcm-olx-l{color:#ffce32}.kcm-olx-x{color:#3a77ff}.kcm-brand-ka{background:#e8f7d8;color:#203b13}.kcm-ka-mark{width:30px;height:30px;border-radius:8px;background:#65b32e;color:#fff;display:grid;place-items:center;font-size:18px}.kcm-brand-imot{background:#fff}.kcm-imot-mark{font-size:11px;color:#e21f2f;letter-spacing:-.04em}.kcm-imot-mark span{color:#2d5ea8}
-      @media(min-width:901px){.kcm-overlay{align-items:center}.kcm-sheet{padding:22px}.kcm-card{padding:14px}}
-      @media(max-width:700px){.kcm-overlay{padding:0;align-items:flex-end}.kcm-sheet{width:100%;max-height:88vh;border-radius:27px 27px 0 0;border-bottom:0;padding:12px 13px max(18px,env(safe-area-inset-bottom))}.kcm-grabber{display:block}.kcm-head{margin-bottom:14px}.kcm-head h2{font-size:20px}.kcm-grid,.kcm-grid-sell{grid-template-columns:1fr}.kcm-card{grid-template-columns:46px minmax(0,1fr) 16px;padding:10px 11px}.kcm-brand{width:46px;height:46px}.kcm-divider{margin:14px 0}}
+      .kch-screen{max-width:860px;margin:0 auto;padding:10px 0 30px}
+      .kch-head{display:grid;grid-template-columns:64px minmax(0,1fr) 64px;align-items:center;margin:4px 0 24px;text-align:center}
+      .kch-head-copy h1{font-size:32px;line-height:1.06;letter-spacing:-.045em;margin:0}
+      .kch-head-copy p{font-size:12px;color:var(--muted);margin:7px 0 0}
+      .kch-back{width:50px;height:50px;border:0;border-radius:17px;background:var(--strong);box-shadow:0 12px 30px rgba(25,33,50,.08);font-size:38px;line-height:38px;display:grid;place-items:center;cursor:pointer;padding:0 0 5px}
+      .kch-group{margin-top:18px}.kch-group+.kch-group{margin-top:28px}
+      .kch-group-head{display:flex;align-items:center;gap:10px;margin:0 10px 10px}
+      .kch-group-head h2{font-size:16px;margin:0}.kch-group-head p{font-size:9px;color:var(--muted);margin:2px 0 0}
+      .kch-direction{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;font-size:17px;font-weight:900}
+      .kch-direction-buy{color:var(--blue);background:rgba(89,105,232,.09)}.kch-direction-sell{color:var(--green);background:rgba(19,135,98,.09)}
+      .kch-card{border:1px solid var(--line);background:var(--strong);border-radius:26px;box-shadow:0 20px 50px rgba(26,35,52,.08);overflow:hidden;padding:0 18px}
+      .kch-row{width:100%;min-height:128px;border:0;background:transparent;display:grid;grid-template-columns:82px minmax(0,1fr) 24px;gap:17px;align-items:center;text-align:left;padding:20px 8px;cursor:pointer}
+      .kch-logo{width:72px;height:72px;border-radius:20px;display:grid;place-items:center;overflow:hidden;border:1px solid rgba(20,28,42,.09);background:#f5f8fb}.kch-logo svg{width:100%;height:100%;display:block}
+      .kch-copy{min-width:0;display:block}.kch-eyebrow{display:block;font-size:10px;line-height:1;font-weight:800;letter-spacing:.11em;color:var(--muted);margin-bottom:7px}.kch-copy strong{display:block;font-size:19px;line-height:1.18;letter-spacing:-.025em}.kch-copy small{display:block;margin-top:6px;font-size:11px;line-height:1.38;color:var(--muted)}
+      .kch-chevron{font-size:38px;line-height:1;color:var(--muted);font-weight:300}.kch-separator{height:1px;background:var(--line)}
+      @media(max-width:900px){.kch-screen{padding:4px 14px 24px;max-width:100%}.kch-head{grid-template-columns:56px minmax(0,1fr) 56px;margin:1px 0 22px}.kch-head-copy h1{font-size:27px}.kch-head-copy p{font-size:10px}.kch-back{width:46px;height:46px;border-radius:16px;font-size:34px}.kch-group{margin-top:16px}.kch-group+.kch-group{margin-top:24px}.kch-card{padding:0 12px;border-radius:24px}.kch-row{min-height:112px;grid-template-columns:68px minmax(0,1fr) 20px;gap:13px;padding:17px 5px}.kch-logo{width:62px;height:62px;border-radius:18px}.kch-eyebrow{font-size:9px}.kch-copy strong{font-size:17px}.kch-copy small{font-size:10px}.kch-chevron{font-size:32px}}
+      @media(max-width:420px){.kch-screen{padding-left:10px;padding-right:10px}.kch-row{grid-template-columns:64px minmax(0,1fr) 18px;gap:11px}.kch-logo{width:58px;height:58px;border-radius:17px}.kch-copy strong{font-size:16px}.kch-copy small{font-size:9.5px}}
     `;
     document.head.appendChild(style);
   }
