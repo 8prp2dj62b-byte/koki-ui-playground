@@ -1,5 +1,5 @@
 import { GeminiPropertySearchCompiler } from './gemini-compiler.js';
-import { ImotClient } from './imot-client.js';
+import { ImotClient } from './imot-client-live.js';
 import { PropertySearchStore } from './store.js';
 import type { PropertySearchRequest } from './types.js';
 
