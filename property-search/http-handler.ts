@@ -1,6 +1,13 @@
 import { PropertySearchService } from './service.js';
 
-export function createPropertySearchHttpHandler(service: PropertySearchService) {
+export type PropertySearchOwnerResolver = (req: Request) => string | null | Promise<string | null>;
+
+export function createPropertySearchHttpHandler(
+  service: PropertySearchService,
+  options: { resolveOwner: PropertySearchOwnerResolver },
+) {
+  if (typeof options?.resolveOwner !== 'function') throw new Error('OWNER_RESOLVER_REQUIRED');
+
   return async function handle(req: Request): Promise<Response> {
     try {
       const url = new URL(req.url);
@@ -12,9 +19,12 @@ export function createPropertySearchHttpHandler(service: PropertySearchService) 
         return json({ ok: true, module: 'property-search', source: 'imot.bg' });
       }
 
+      const ownerKey = String(await options.resolveOwner(req) || '').trim();
+      if (!ownerKey) return json({ ok: false, error: 'AUTHENTICATION_REQUIRED' }, 401);
+
       if (req.method === 'POST' && path === `${base}/searches`) {
         const body = await readJson(req);
-        const result = await service.createSearch({
+        const result = await service.createSearch(ownerKey, {
           text: requiredString(body.text, 'SEARCH_TEXT_REQUIRED'),
           title: optionalString(body.title),
         });
@@ -27,23 +37,27 @@ export function createPropertySearchHttpHandler(service: PropertySearchService) 
       const tail = match[2] || '';
 
       if (req.method === 'GET' && tail === '') {
-        return json({ ok: true, search: service.getSearch(searchId) });
+        return json({ ok: true, search: service.getSearch(ownerKey, searchId) });
       }
       if (req.method === 'GET' && tail === 'results') {
-        return json({ ok: true, results: service.listResults(searchId) });
+        return json({ ok: true, results: service.listResults(ownerKey, searchId) });
       }
       if (req.method === 'POST' && tail === 'refresh') {
-        return json({ ok: true, ...(await service.refreshSearch(searchId)) });
+        return json({ ok: true, ...(await service.refreshSearch(ownerKey, searchId)) });
       }
       if (req.method === 'POST' && tail === 'criteria') {
         const body = await readJson(req);
-        const result = await service.addCriterion(searchId, requiredString(body.text, 'CRITERION_TEXT_REQUIRED'));
+        const result = await service.addCriterion(
+          ownerKey,
+          searchId,
+          requiredString(body.text, 'CRITERION_TEXT_REQUIRED'),
+        );
         return json({ ok: true, ...result });
       }
       if (req.method === 'PATCH' && tail === 'status') {
         const body = await readJson(req);
         if (!['active','paused','archived'].includes(body.status)) throw new Error('INVALID_SEARCH_STATUS');
-        return json({ ok: true, search: service.setSearchStatus(searchId, body.status) });
+        return json({ ok: true, search: service.setSearchStatus(ownerKey, searchId, body.status) });
       }
 
       const resultMatch = tail.match(/^results\/([^/]+)$/);
@@ -51,13 +65,17 @@ export function createPropertySearchHttpHandler(service: PropertySearchService) 
         const body = await readJson(req);
         if (!['SEEN','SAVED','DISMISSED'].includes(body.state)) throw new Error('INVALID_RESULT_STATE');
         const listingId = decodeURIComponent(resultMatch[1]);
-        return json({ ok: true, results: service.setResultState(searchId, listingId, body.state) });
+        return json({
+          ok: true,
+          results: service.setResultState(ownerKey, searchId, listingId, body.state),
+        });
       }
 
       return json({ ok: false, error: 'NOT_FOUND' }, 404);
     } catch (error) {
       const code = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
       const status = code === 'SEARCH_NOT_FOUND' ? 404
+        : code === 'AUTHENTICATION_REQUIRED' ? 401
         : code.includes('REQUIRED') || code.startsWith('INVALID_') ? 400
         : code === 'IMOT_RATE_LIMITED' ? 429
         : code.startsWith('GEMINI_') || code.startsWith('IMOT_') ? 502
