@@ -28,6 +28,17 @@ const slivenHouseRequest: PropertySearchRequest = {
   freeTextConstraints: [],
 };
 
+const popovoHouseRequest: PropertySearchRequest = {
+  operation: 'search_properties',
+  transaction: 'sale',
+  propertyTypes: ['house'],
+  location: { city: 'Попово' },
+  requiredFeatures: [],
+  preferredFeatures: [],
+  excludedFeatures: [],
+  freeTextConstraints: [],
+};
+
 const taxonomyHtml = `
   <html><body>
     <a href="/obiavi/prodazhbi/grad-sliven">Имоти град Сливен</a>
@@ -39,6 +50,24 @@ const taxonomyHtml = `
 const taxonomyFetch: typeof fetch = async (input) => {
   const url = String(input);
   if (url.includes('/sitemap/obiavi/prodazhbi')) return new Response(taxonomyHtml, { status: 200 });
+  if (url === 'https://www.imot.bg/obiavi/prodazhbi') return new Response(taxonomyHtml, { status: 200 });
+  return new Response('', { status: 200 });
+};
+
+const popovoDiscoveryFetch: typeof fetch = async (input) => {
+  const url = String(input);
+  if (url.includes('/sitemap/obiavi/prodazhbi')) {
+    return new Response('<a href="/obiavi/prodazhbi/oblast-targovishte">област Търговище</a>', { status: 200 });
+  }
+  if (url === 'https://www.imot.bg/obiavi/prodazhbi') {
+    return new Response('<a href="/obiavi/prodazhbi/oblast-targovishte">област Търговище</a>', { status: 200 });
+  }
+  if (url === 'https://www.imot.bg/obiavi/prodazhbi/oblast-targovishte') {
+    return new Response(`
+      <a href="/obiavi/prodazhbi/oblast-targovishte/gr-omurtag">гр. Омуртаг</a>
+      <a href="/obiavi/prodazhbi/oblast-targovishte/gr-popovo">гр. Попово</a>
+    `, { status: 200 });
+  }
   return new Response('', { status: 200 });
 };
 
@@ -64,6 +93,14 @@ test('Sliven house request resolves dynamically instead of failing hardcoded cit
   assert.equal(
     await client.buildSearchUrl(slivenHouseRequest),
     'https://www.imot.bg/obiavi/prodazhbi/grad-sliven/kashta'
+  );
+});
+
+test('Popovo is discovered from the live oblast taxonomy even when absent from sitemap/root', async () => {
+  const client = new ImotClient(undefined, popovoDiscoveryFetch);
+  assert.equal(
+    await client.buildSearchUrl(popovoHouseRequest),
+    'https://www.imot.bg/obiavi/prodazhbi/oblast-targovishte/gr-popovo/kashta'
   );
 });
 
