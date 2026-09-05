@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ImotClient } from '../imot-client.js';
+import { ImotClient } from '../imot-client-live.js';
 import { assertPropertySearchRequest, type PropertySearchRequest } from '../types.js';
 
 const banskoRequest: PropertySearchRequest = {
@@ -40,7 +40,7 @@ test('search parser only returns real /obiava-* links and deduplicates by listin
     <html><body>
       <article>
         <a href="/obiava-1c178281172887622-real-one" title="Тристаен Банско">Тристаен Банско</a>
-        <span>120 000 EUR</span><span>90 м²</span><span>1 333 EUR/m²</span>
+        <span>120 000 €</span><span>90 м²</span><span>1 333 €/м²</span>
         <img src="https://imotstatic2.focus.bg/imot/photos/test.jpg">
       </article>
       <article><a href="/search/prodazhbi">not a listing</a></article>
@@ -51,6 +51,7 @@ test('search parser only returns real /obiava-* links and deduplicates by listin
   assert.equal(result[0].listingId, '1c178281172887622');
   assert.equal(result[0].price, 120000);
   assert.equal(result[0].areaM2, 90);
+  assert.equal(result[0].pricePerM2, 1333);
 });
 
 test('detail parser leaves phone null when source does not expose tel link', () => {
@@ -61,8 +62,8 @@ test('detail parser leaves phone null when source does not expose tel link', () 
       <title>Тристаен апартамент Банско</title>
     </head><body>
       <h1>Тристаен апартамент Банско</h1>
-      <div class="description">Реално описание на имота с достатъчно текст за parser-а. Апартаментът е с площ 90 м² и цена 120 000 EUR. Това е само тестов source HTML.</div>
-      <span>120 000 EUR</span><span>90 м²</span><span>етаж 3</span>
+      <div class="description">Реално описание на имота с достатъчно текст за parser-а. Апартаментът е с площ 90 м² и цена 120 000 €. Това е само тестов source HTML.</div>
+      <span>120 000 €</span><span>90 м²</span><span>етаж 3</span>
     </body></html>`;
   const listing = client.parseListingPage(
     html,
@@ -79,7 +80,7 @@ test('detail parser uses phone only from actual tel: source value', () => {
   const client = new ImotClient(undefined, async () => new Response(''));
   const html = `
     <html><head><link rel="canonical" href="https://www.imot.bg/obiava-abc123-real"></head><body>
-      <h1>Тристаен</h1><p>Цена 100 000 EUR, площ 85 м². Достатъчно описание за тестовата реална страница и контакт.</p>
+      <h1>Тристаен</h1><p>Цена 100 000 €, площ 85 м². Достатъчно описание за тестовата реална страница и контакт.</p>
       <a href="tel:+359888123456">Обади се</a>
     </body></html>`;
   const listing = client.parseListingPage(html, 'https://www.imot.bg/obiava-abc123-real', 'abc123');
