@@ -16,6 +16,32 @@ export interface SavedSearchRow {
   lastRunAt: string | null;
 }
 
+export function listingSourceFingerprint(listing: PropertyListing) {
+  const stableSourceFacts = {
+    source: listing.source,
+    listingId: listing.listingId,
+    canonicalUrl: listing.canonicalUrl,
+    title: listing.title,
+    price: listing.price,
+    currency: listing.currency,
+    areaM2: listing.areaM2,
+    pricePerM2: listing.pricePerM2,
+    locationText: listing.locationText,
+    thumbnailUrl: listing.thumbnailUrl,
+    description: listing.description,
+    propertyType: listing.propertyType,
+    floor: listing.floor,
+    totalFloors: listing.totalFloors,
+    constructionType: listing.constructionType,
+    constructionYear: listing.constructionYear,
+    seller: listing.seller,
+    contact: listing.contact,
+    imageUrls: listing.imageUrls,
+    publishedAt: listing.publishedAt,
+  };
+  return crypto.createHash('sha256').update(JSON.stringify(stableSourceFacts)).digest('hex');
+}
+
 export class PropertySearchStore implements ListingCache {
   private readonly db: Database.Database;
 
@@ -88,7 +114,7 @@ export class PropertySearchStore implements ListingCache {
   async put(listing: PropertyListing): Promise<void> {
     const now = new Date().toISOString();
     const payload = JSON.stringify(listing);
-    const hash = crypto.createHash('sha256').update(payload).digest('hex');
+    const hash = listingSourceFingerprint(listing);
     this.db.prepare(`
       INSERT INTO property_listings (
         source_listing_id, canonical_url, payload_json, source_hash, status, first_seen_at, last_seen_at
@@ -187,7 +213,7 @@ export class PropertySearchStore implements ListingCache {
     const tx = this.db.transaction(() => {
       for (const listing of listings) {
         const payload = JSON.stringify(listing);
-        const hash = crypto.createHash('sha256').update(payload).digest('hex');
+        const hash = listingSourceFingerprint(listing);
         const previous = this.db.prepare(`SELECT source_hash FROM property_listings WHERE source_listing_id=?`).get(listing.listingId) as { source_hash: string } | undefined;
         if (!previous) newListings++;
         else if (previous.source_hash !== hash) changedListings++;
