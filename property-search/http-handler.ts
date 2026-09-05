@@ -28,6 +28,7 @@ export function createPropertySearchHttpHandler(
           text: requiredString(body.text, 'SEARCH_TEXT_REQUIRED'),
           title: optionalString(body.title),
         });
+        if (result.needsInput) return additionsResponse(result.additions);
         return json({ ok: true, ...result }, 201);
       }
 
@@ -52,6 +53,7 @@ export function createPropertySearchHttpHandler(
           searchId,
           requiredString(body.text, 'CRITERION_TEXT_REQUIRED'),
         );
+        if (result.needsInput) return additionsResponse(result.additions);
         return json({ ok: true, ...result });
       }
       if (req.method === 'PATCH' && tail === 'status') {
@@ -83,6 +85,16 @@ export function createPropertySearchHttpHandler(
       return json({ ok: false, error: code }, status);
     }
   };
+}
+
+function additionsResponse(additions: Array<{ question: string }>) {
+  const question = additions.map(item => item.question).filter(Boolean).join(' ');
+  return json({
+    ok: false,
+    needsInput: true,
+    error: question || 'Нужно е уточнение на критериите.',
+    additions,
+  }, 409);
 }
 
 async function readJson(req: Request): Promise<any> {
