@@ -24,11 +24,18 @@ export interface ImotFormControl {
   options: ImotFormControlOption[];
 }
 
+export interface ImotNavigationOption {
+  label: string;
+  path: string;
+}
+
 export interface ImotGeminiNomenclature {
   source: 'imot.bg';
+  capturedAt: string;
   transactions: Array<{ requestValue: 'sale' | 'rent'; sourceRoute: TransactionRoute }>;
   propertyTypes: Array<{ requestValue: PropertyType; sourceSlug: string | null }>;
   locationRoutes: { sale: string[]; rent: string[] };
+  navigation: { sale: ImotNavigationOption[]; rent: ImotNavigationOption[] };
   formControls: { sale: ImotFormControl[]; rent: ImotFormControl[] };
 }
 
@@ -58,7 +65,7 @@ const PROPERTY_TYPES: PropertyType[] = [
   'floor-of-house','land','office','shop','garage','parking-space','warehouse','industrial','hotel','other',
 ];
 
-/** Source-owned taxonomy resolver. Gemini sees the full snapshot, but only ImotClient builds source URLs. */
+/** Source-owned taxonomy resolver. Gemini sees the full current source snapshot; only ImotClient builds source URLs. */
 export class ImotTaxonomyResolver {
   private readonly routeCache = new Map<string, string>();
   private readonly taxonomyCache = new Map<TransactionRoute, Promise<string[]>>();
@@ -93,17 +100,18 @@ export class ImotTaxonomyResolver {
   }
 
   private async loadFullSnapshot(): Promise<ImotGeminiNomenclature> {
-    const [saleRoutes, rentRoutes, saleForm, rentForm] = await Promise.all([
+    const [saleRoutes, rentRoutes, saleSearchHtml, rentSearchHtml] = await Promise.all([
       this.getTaxonomyPaths('prodazhbi'),
       this.getTaxonomyPaths('naemi'),
-      this.getText(`${BASE}/search/prodazhbi`).then(extractFormControls),
-      this.getText(`${BASE}/search/naemi`).then(extractFormControls),
+      this.getText(`${BASE}/search/prodazhbi`),
+      this.getText(`${BASE}/search/naemi`),
     ]);
 
     if (!saleRoutes.length || !rentRoutes.length) throw new Error('IMOT_NOMENCLATURE_UNAVAILABLE');
 
     return {
       source: 'imot.bg',
+      capturedAt: new Date().toISOString(),
       transactions: [
         { requestValue: 'sale', sourceRoute: 'prodazhbi' },
         { requestValue: 'rent', sourceRoute: 'naemi' },
@@ -116,9 +124,13 @@ export class ImotTaxonomyResolver {
         sale: [...saleRoutes].sort(),
         rent: [...rentRoutes].sort(),
       },
+      navigation: {
+        sale: extractNavigationOptions(saleSearchHtml, 'prodazhbi'),
+        rent: extractNavigationOptions(rentSearchHtml, 'naemi'),
+      },
       formControls: {
-        sale: saleForm,
-        rent: rentForm,
+        sale: extractFormControls(saleSearchHtml),
+        rent: extractFormControls(rentSearchHtml),
       },
     };
   }
@@ -165,6 +177,35 @@ export class ImotTaxonomyResolver {
     try { return new TextDecoder(charset).decode(bytes); }
     catch { return new TextDecoder('utf-8').decode(bytes); }
   }
+}
+
+export function extractNavigationOptions(html: string, transaction: TransactionRoute): ImotNavigationOption[] {
+  const $ = cheerio.load(html);
+  const found = new Map<string, ImotNavigationOption>();
+
+  $('a[href]').each((_, element) => {
+    const node = $(element);
+    const href = node.attr('href');
+    if (!href) return;
+
+    let url: URL;
+    try { url = new URL(href, BASE); } catch { return; }
+    if (url.hostname !== 'www.imot.bg' && url.hostname !== 'imot.bg') return;
+    if (url.pathname.includes('/obiava-')) return;
+
+    const relevant = url.pathname.startsWith(`/obiavi/${transaction}`)
+      || url.pathname.startsWith('/search/');
+    if (!relevant) return;
+
+    const label = cleanText(node.text() || node.attr('title'));
+    if (!label) return;
+
+    const path = `${url.pathname}${url.search}`;
+    const key = `${label}\u0000${path}`;
+    if (!found.has(key)) found.set(key, { label, path });
+  });
+
+  return [...found.values()].sort((a, b) => `${a.label}:${a.path}`.localeCompare(`${b.label}:${b.path}`, 'bg'));
 }
 
 export function extractFormControls(html: string): ImotFormControl[] {
