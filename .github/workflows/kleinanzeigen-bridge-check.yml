@@ -1,0 +1,25 @@
+name: Kleinanzeigen bridge check
+
+on:
+  push:
+    branches:
+      - feature/kleinanzeigen-auth-bridge-v1
+      - feature/kleinanzeigen-auth-bridge-v2
+    paths:
+      - 'kleinanzeigen-bridge/**'
+      - '.github/workflows/kleinanzeigen-bridge-check.yml'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kleinanzeigen-bridge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install --ignore-scripts --no-audit --no-fund
+      - run: node --check api/link.js
+      - run: node -e "import('./api/link.js').then(()=>console.log('IMPORT_OK'))"
