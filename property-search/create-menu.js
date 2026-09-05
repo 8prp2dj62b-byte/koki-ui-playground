@@ -2,9 +2,14 @@
   const MENU_ID = 'kokiCreateMenu';
 
   function boot() {
-    const plus = document.querySelector('.dock .plus');
+    const originalPlus = document.querySelector('.dock .plus');
     const buy = document.getElementById('buy');
-    if (!plus || !buy || document.getElementById(MENU_ID)) return false;
+    if (!originalPlus || !buy || document.getElementById(MENU_ID)) return false;
+
+    // Replace controls that already have legacy anonymous data-go listeners.
+    // Cloning drops those listeners so the chooser is the only create action fired.
+    const plus = originalPlus.cloneNode(true);
+    originalPlus.replaceWith(plus);
 
     // Property search lives in the global + menu, not as a separate Buy card.
     removePropertySearchEntry();
@@ -25,10 +30,12 @@
       openMenu(menu, plus);
     });
 
-    // Existing hero create buttons now use the same chooser, pre-focused by side.
-    document.querySelectorAll('.new').forEach(button => {
-      const text = (button.textContent || '').toLocaleLowerCase('bg-BG');
+    // Existing hero create buttons use the same chooser, pre-focused by side.
+    document.querySelectorAll('.new').forEach(originalButton => {
+      const text = (originalButton.textContent || '').toLocaleLowerCase('bg-BG');
       if (!text.includes('нова покупка') && !text.includes('нова продажба')) return;
+      const button = originalButton.cloneNode(true);
+      originalButton.replaceWith(button);
       button.removeAttribute('data-go');
       button.addEventListener('click', event => {
         event.preventDefault();
