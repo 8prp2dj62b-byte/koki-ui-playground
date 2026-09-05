@@ -1,7 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { listingSourceFingerprint } from '../store.js';
-import type { PropertyListing } from '../types.js';
+import { PropertySearchStore, listingSourceFingerprint } from '../store.js';
+import type { PropertyListing, PropertySearchRequest } from '../types.js';
+
+const request: PropertySearchRequest = {
+  operation: 'search_properties',
+  transaction: 'sale',
+  propertyTypes: ['3-room'],
+  location: { city: 'Банско' },
+  price: { max: 140000, currency: 'EUR' },
+  area: { min: 80 },
+  floor: { exclude: [1] },
+  requiredFeatures: [],
+  preferredFeatures: [],
+  excludedFeatures: [],
+  freeTextConstraints: [],
+};
 
 function listing(overrides: Partial<PropertyListing> = {}): PropertyListing {
   return {
@@ -41,4 +55,17 @@ test('real source price change changes fingerprint', () => {
     listingSourceFingerprint(listing({ price: 120000 })),
     listingSourceFingerprint(listing({ price: 115000 }))
   );
+});
+
+test('saved searches are isolated by KOKI owner', () => {
+  const store = new PropertySearchStore(':memory:');
+  const created = store.createSearch({
+    ownerKey: 'koki-profile-a',
+    title: '3-room Bansko',
+    originalText: '3-стаен в Банско',
+    request,
+  });
+
+  assert.equal(store.getSearch('koki-profile-a', created.id)?.id, created.id);
+  assert.equal(store.getSearch('koki-profile-b', created.id), null);
 });
