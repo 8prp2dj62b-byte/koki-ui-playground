@@ -31,3 +31,5 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: node --check buy-entry.js
+      - name: Verify Buy host loader
+        run: grep -Fq '<script src="./property-search/buy-entry.js"></script>' ../index.html
