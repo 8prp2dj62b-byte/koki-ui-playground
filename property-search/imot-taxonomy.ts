@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio';
 import type { PropertyType } from './types.js';
 
 const BASE = 'https://www.imot.bg';
+const DISCOVERY_CONCURRENCY = 6;
 
 type TransactionRoute = 'prodazhbi' | 'naemi';
 
@@ -145,15 +146,44 @@ export class ImotTaxonomyResolver {
   }
 
   private async loadTaxonomyPaths(transaction: TransactionRoute): Promise<string[]> {
-    const sitemapUrl = `${BASE}/sitemap/obiavi/${transaction}`;
+    const collected = new Set<string>();
+
+    // The sitemap is the cheapest source when it is complete, but imot.bg does not always
+    // expose every nested city route there. Keep it as the first source, not the only source.
     try {
-      const html = await this.getText(sitemapUrl);
-      const paths = extractImotTaxonomyPaths(html, transaction);
-      if (paths.length) return paths;
+      const sitemapHtml = await this.getText(`${BASE}/sitemap/obiavi/${transaction}`);
+      for (const route of extractImotTaxonomyPaths(sitemapHtml, transaction)) collected.add(route);
     } catch {}
 
-    const html = await this.getText(`${BASE}/obiavi/${transaction}`);
-    return extractImotTaxonomyPaths(html, transaction);
+    // The transaction root gives us the authoritative oblast roots even when the sitemap is
+    // unavailable or incomplete.
+    const indexHtml = await this.getText(`${BASE}/obiavi/${transaction}`);
+    for (const route of extractImotTaxonomyPaths(indexHtml, transaction)) collected.add(route);
+
+    // Critical completeness step: crawl every source-exposed oblast root once and merge its
+    // locality links. This is what makes towns such as Popovo discoverable as
+    // oblast-targovishte/gr-popovo instead of failing taxonomy resolution.
+    const oblastRoots = [...new Set(
+      [...collected]
+        .map(route => route.split('/').filter(Boolean)[0] || '')
+        .filter(segment => segment.startsWith('oblast-')),
+    )].sort();
+
+    const nested = await mapLimit(oblastRoots, DISCOVERY_CONCURRENCY, async oblastRoot => {
+      try {
+        const html = await this.getText(`${BASE}/obiavi/${transaction}/${oblastRoot}`);
+        return extractImotTaxonomyPaths(html, transaction);
+      } catch {
+        // One broken oblast page must not invalidate the last usable source taxonomy.
+        return [];
+      }
+    });
+
+    for (const routes of nested) {
+      for (const route of routes) collected.add(route);
+    }
+
+    return [...collected];
   }
 
   private async getText(url: string) {
@@ -305,6 +335,23 @@ export function imotSlug(value: string): string {
   let out = '';
   for (const char of text) out += map[char] ?? char;
   return out.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/-+/g, '-');
+}
+
+async function mapLimit<T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>): Promise<R[]> {
+  if (!items.length) return [];
+  const output = new Array<R>(items.length);
+  let next = 0;
+
+  async function run() {
+    while (true) {
+      const index = next++;
+      if (index >= items.length) return;
+      output[index] = await worker(items[index]);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => run()));
+  return output;
 }
 
 function findControlLabel($: cheerio.CheerioAPI, node: cheerio.Cheerio<any>) {
