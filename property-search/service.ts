@@ -22,29 +22,33 @@ export class PropertySearchService {
     this.client = new ImotClient(this.store);
   }
 
-  async createSearch(input: { text: string; title?: string }) {
+  async createSearch(ownerKey: string, input: { text: string; title?: string }) {
+    const owner = requireOwner(ownerKey);
     const request = await this.compiler.compile(input.text);
     const title = input.title?.trim() || this.defaultTitle(request);
     const saved = this.store.createSearch({
+      ownerKey: owner,
       title,
       originalText: input.text,
       request,
     });
-    const run = await this.refreshSearch(saved.id);
-    return { search: this.store.getSearch(saved.id), ...run };
+    const run = await this.refreshSearch(owner, saved.id);
+    return { search: this.store.getSearch(owner, saved.id), ...run };
   }
 
-  async addCriterion(searchId: string, text: string) {
-    const current = this.requireSearch(searchId);
+  async addCriterion(ownerKey: string, searchId: string, text: string) {
+    const owner = requireOwner(ownerKey);
+    const current = this.requireSearch(owner, searchId);
     const request = await this.compiler.compile(text, current.request);
     const mergedText = `${current.originalText}\n+ ${text}`;
-    this.store.updateSearchRequest(searchId, mergedText, request);
-    const run = await this.refreshSearch(searchId);
-    return { search: this.store.getSearch(searchId), ...run };
+    this.store.updateSearchRequest(owner, searchId, mergedText, request);
+    const run = await this.refreshSearch(owner, searchId);
+    return { search: this.store.getSearch(owner, searchId), ...run };
   }
 
-  async refreshSearch(searchId: string) {
-    const search = this.requireSearch(searchId);
+  async refreshSearch(ownerKey: string, searchId: string) {
+    const owner = requireOwner(ownerKey);
+    const search = this.requireSearch(owner, searchId);
     if (search.status !== 'active') throw new Error('SEARCH_NOT_ACTIVE');
     const runId = this.store.startRun(searchId);
     try {
@@ -76,14 +80,15 @@ export class PropertySearchService {
 
   async refreshAllActive() {
     const searches = this.store.listActiveSearches();
-    const output: Array<{ searchId: string; ok: boolean; error?: string }> = [];
+    const output: Array<{ searchId: string; ownerKey: string; ok: boolean; error?: string }> = [];
     for (const search of searches) {
       try {
-        await this.refreshSearch(search.id);
-        output.push({ searchId: search.id, ok: true });
+        await this.refreshSearch(search.ownerKey, search.id);
+        output.push({ searchId: search.id, ownerKey: search.ownerKey, ok: true });
       } catch (error) {
         output.push({
           searchId: search.id,
+          ownerKey: search.ownerKey,
           ok: false,
           error: error instanceof Error ? error.message : 'UNKNOWN_ERROR',
         });
@@ -92,29 +97,30 @@ export class PropertySearchService {
     return output;
   }
 
-  getSearch(searchId: string) {
-    return this.requireSearch(searchId);
+  getSearch(ownerKey: string, searchId: string) {
+    return this.requireSearch(requireOwner(ownerKey), searchId);
   }
 
-  listResults(searchId: string) {
-    this.requireSearch(searchId);
+  listResults(ownerKey: string, searchId: string) {
+    this.requireSearch(requireOwner(ownerKey), searchId);
     return this.store.listResults(searchId);
   }
 
-  setResultState(searchId: string, listingId: string, state: 'SEEN' | 'SAVED' | 'DISMISSED') {
-    this.requireSearch(searchId);
+  setResultState(ownerKey: string, searchId: string, listingId: string, state: 'SEEN' | 'SAVED' | 'DISMISSED') {
+    this.requireSearch(requireOwner(ownerKey), searchId);
     this.store.setMatchState(searchId, listingId, state);
     return this.store.listResults(searchId);
   }
 
-  setSearchStatus(searchId: string, status: 'active' | 'paused' | 'archived') {
-    this.requireSearch(searchId);
-    this.store.setSearchStatus(searchId, status);
-    return this.store.getSearch(searchId);
+  setSearchStatus(ownerKey: string, searchId: string, status: 'active' | 'paused' | 'archived') {
+    const owner = requireOwner(ownerKey);
+    this.requireSearch(owner, searchId);
+    this.store.setSearchStatus(owner, searchId, status);
+    return this.store.getSearch(owner, searchId);
   }
 
-  private requireSearch(id: string) {
-    const found = this.store.getSearch(id);
+  private requireSearch(ownerKey: string, id: string) {
+    const found = this.store.getSearch(ownerKey, id);
     if (!found) throw new Error('SEARCH_NOT_FOUND');
     return found;
   }
@@ -124,4 +130,10 @@ export class PropertySearchService {
     const city = request.location.city || '';
     return `${type} ${city}`.trim();
   }
+}
+
+function requireOwner(value: string) {
+  const owner = String(value || '').trim();
+  if (!owner || owner.length > 256) throw new Error('OWNER_REQUIRED');
+  return owner;
 }
