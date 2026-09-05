@@ -3,11 +3,13 @@
 
   function boot() {
     const plus = document.querySelector('.dock .plus');
-    if (!plus || document.getElementById(MENU_ID)) return false;
+    const buy = document.getElementById('buy');
+    if (!plus || !buy || document.getElementById(MENU_ID)) return false;
 
-    // Property search now lives in the global + menu, not as a separate Buy card.
-    const oldPropertyEntry = document.getElementById('kokiPropertySearchEntry');
-    if (oldPropertyEntry) oldPropertyEntry.remove();
+    // Property search lives in the global + menu, not as a separate Buy card.
+    removePropertySearchEntry();
+    const observer = new MutationObserver(removePropertySearchEntry);
+    observer.observe(buy, { childList: true, subtree: true });
 
     installStyles();
     const menu = buildMenu();
@@ -23,19 +25,23 @@
       openMenu(menu, plus);
     });
 
-    // Keep the existing hero create buttons useful: they open the same chooser,
-    // pre-scrolled to the relevant section instead of inventing another entry point.
+    // Existing hero create buttons now use the same chooser, pre-focused by side.
     document.querySelectorAll('.new').forEach(button => {
       const text = (button.textContent || '').toLocaleLowerCase('bg-BG');
       if (!text.includes('нова покупка') && !text.includes('нова продажба')) return;
       button.removeAttribute('data-go');
       button.addEventListener('click', event => {
         event.preventDefault();
+        event.stopPropagation();
         openMenu(menu, plus, text.includes('покупка') ? 'buy' : 'sell');
       });
     });
 
     return true;
+  }
+
+  function removePropertySearchEntry() {
+    document.getElementById('kokiPropertySearchEntry')?.remove();
   }
 
   function buildMenu() {
@@ -117,6 +123,7 @@
   }
 
   function openMenu(menu, plus, focusSection) {
+    removePropertySearchEntry();
     menu.classList.add('on');
     menu.setAttribute('aria-hidden', 'false');
     plus?.setAttribute('aria-expanded', 'true');
@@ -159,8 +166,8 @@
       return;
     }
 
-    // Let the host app catch platform-specific actions without coupling this UI module
-    // to the current implementation of OLX / Kleinanzeigen create flows.
+    // Host adapter: lets the real KOKI OLX / KA flows handle the action without
+    // coupling this visual menu to their current implementation details.
     const [platformKey, side] = action.split('-');
     const platform = platformKey === 'ka' ? 'kleinanzeigen' : platformKey;
     const event = new CustomEvent('koki:create', {
