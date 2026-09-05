@@ -44,11 +44,30 @@ KOKI_PROPERTY_DB=/var/lib/koki/property-search.sqlite
 
 No Supabase dependency is used by this module.
 
-## HTTP mounting
+## HTTP mounting and KOKI ownership
 
-Mount `createPropertySearchHttpHandler(service)` under the KOKI server for `/api/property-search/*`.
+The KOKI host authenticates the request with its existing auth and resolves the current KOKI owner/profile before dispatching to the module.
 
-The host KOKI server MUST authenticate/authorize the user before dispatching into this handler. The property-search module intentionally does not implement a second authentication system.
+```ts
+const handler = createPropertySearchHttpHandler(service, {
+  resolveOwner: async (req) => {
+    const session = await existingKokiAuth(req);
+    return session?.profileId ?? null;
+  },
+});
+```
+
+Mount the handler for `/api/property-search/*`.
+
+The owner identifier is application security context, not search intent. It never enters the Gemini prompt or `PropertySearchRequest`, so the hard 1:1 contract remains:
+
+```text
+Gemini output JSON === ImotClient.search() input JSON
+```
+
+Saved searches are scoped by `owner_key`; another KOKI profile cannot read or mutate them by knowing a search UUID.
+
+The property-search module intentionally does not create a second login/authentication system.
 
 ## Buy UI entry
 
