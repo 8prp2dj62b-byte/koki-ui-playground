@@ -1,0 +1,86 @@
+name: Inspect KOKI orphan UNKNOWN conversation
+
+on:
+  push:
+    branches:
+      - diagnostic/koki-primary-log-check-20260905
+    paths:
+      - .github/workflows/fix-unknown-conversation-20260907.yml
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: diagnostic/koki-primary-log-check-20260905
+          fetch-depth: 1
+
+      - name: Inspect deployed KOKI notification/classification code
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          out="diagnostics/koki-primary-unknown-conversation-20260907.md"
+          {
+            echo '# KOKI primary UNKNOWN conversation diagnostic — 2026-09-07'
+            echo
+            echo '## Host'
+            echo '```'
+            date --iso-8601=seconds
+            hostname
+            whoami
+            echo '```'
+            echo
+            echo '## Candidate deploy directories'
+            echo '```'
+            for d in /opt/koki /srv/koki /home/ubuntu/koki /home/ubuntu/koki-ui-playground /var/www/koki; do
+              if [ -d "$d" ]; then
+                echo "DIR=$d"
+                git -C "$d" rev-parse --show-toplevel 2>/dev/null || true
+                git -C "$d" rev-parse HEAD 2>/dev/null || true
+                git -C "$d" status --short --branch 2>/dev/null | head -n 20 || true
+              fi
+            done
+            echo '```'
+            echo
+            echo '## Running KOKI services/processes'
+            echo '```'
+            systemctl list-units --type=service --all --no-pager 2>/dev/null | grep -Ei 'koki|node|nginx|caddy' | head -n 100 || true
+            ps -eo pid,cmd | grep -Ei 'koki|node|tsx' | grep -v grep | head -n 100 || true
+            echo '```'
+            echo
+            echo '## Relevant source files'
+            echo '```'
+            for root in /opt/koki /srv/koki /home/ubuntu/koki /home/ubuntu/koki-ui-playground /var/www/koki; do
+              [ -d "$root" ] || continue
+              grep -RIlE --exclude-dir=.git --exclude-dir=node_modules --exclude='*.map' \
+                'classification_required|OLX_CLASSIFICATION_REQUIRED|unrecognized conversation|неразпознат разговор|list_classification_decisions|koki_olx_thread_runtime' "$root" 2>/dev/null \
+                | head -n 120 || true
+            done
+            echo '```'
+            echo
+            echo '## Relevant code excerpts (sanitized)'
+            echo '```'
+            for root in /opt/koki /srv/koki /home/ubuntu/koki /home/ubuntu/koki-ui-playground /var/www/koki; do
+              [ -d "$root" ] || continue
+              while IFS= read -r f; do
+                echo "--- FILE: $f"
+                grep -nE -C 3 'classification_required|OLX_CLASSIFICATION_REQUIRED|unrecognized conversation|неразпознат разговор|list_classification_decisions|koki_olx_thread_runtime' "$f" 2>/dev/null \
+                  | head -n 260 \
+                  | sed -E 's/(Bearer )[A-Za-z0-9._~+\/-]+/\1[REDACTED]/g; s/(apikey|token|secret|password)([=:][[:space:]]*)[^,;[:space:]"'"']+/\1\2[REDACTED]/Ig' || true
+              done < <(grep -RIlE --exclude-dir=.git --exclude-dir=node_modules --exclude='*.map' \
+                'classification_required|OLX_CLASSIFICATION_REQUIRED|unrecognized conversation|неразпознат разговор|list_classification_decisions|koki_olx_thread_runtime' "$root" 2>/dev/null | head -n 40)
+            done
+            echo '```'
+          } > "$out"
+
+          git config user.name 'koki-primary diagnostic'
+          git config user.email 'actions@users.noreply.github.com'
+          git add "$out"
+          git commit -m 'diagnostic: capture koki-primary UNKNOWN conversation path' || exit 0
+          git push origin HEAD:diagnostic/koki-primary-log-check-20260905
