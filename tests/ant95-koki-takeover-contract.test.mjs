@@ -45,5 +45,14 @@ assert.match(src,/USER_OVERRIDE_REQUESTED/);
 assert.match(src,/USER_OVERRIDE_APPLIED/);
 assert.match(src,/classification_not_applied/);
 assert.match(src,/status:'queued_reauth_required'/);
+assert.match(src,/async function invalidateOrphanUnknown\(/);
+assert.match(src,/status:'INVALIDATED'/);
+assert.match(src,/runtime_mode:'COLD'/);
+assert.match(src,/decision:'INVALIDATE_ORPHAN_UNKNOWN'/);
+assert.match(src,/httpStatus===404\|\|httpStatus===410/);
+assert.match(src,/reason:'orphan_unknown_invalidated'/);
+assert.match(src,/decision_guard_\$\{live\.response\.status\}/);
+assert.match(src,/live\.response\.status===404\|\|live\.response\.status===410/);
+assert.match(src,/for\(const r of rows\.filter/);
 
-console.log('ANT-95 PASS: 32 assertions');
+console.log('ANT-95 PASS: orphan UNKNOWN lifecycle hardened');
