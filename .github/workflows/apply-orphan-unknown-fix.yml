@@ -1,0 +1,82 @@
+name: Apply orphan UNKNOWN remediation
+
+on:
+  push:
+    branches:
+      - fix/orphan-unknown-conversation-20260907
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/orphan-unknown-conversation-20260907
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Patch orphan UNKNOWN lifecycle
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('supabase/functions/koki-takeover/index.ts')
+          s = p.read_text()
+
+          anchor = "function unresolvedMeta(prev:any,tid:number,advertId:number|null,now:string,reason:string){const old=prev?.classification_required||{},attempt=Number(old.attempt_count||0)+1;return{...(prev||{}),classification_required:{type:'OLX_CLASSIFICATION_REQUIRED',status:'ACTIVE',thread_id:tid,advert_id:advertId,reason,attempt_count:attempt,first_detected_at:old.first_detected_at||now,last_reconcile_at:now,dedupe_key:`olx-classification:${tid}`}}}\n"
+          helper = "function orphanMeta(prev:any,tid:number,now:string,reason:string){const old=prev?.classification_required||{};return{...(prev||{}),classification_required:{...old,type:old.type||'OLX_CLASSIFICATION_REQUIRED',status:'INVALIDATED',thread_id:tid,invalidated_at:now,invalidated_reason:reason,dedupe_key:old.dedupe_key||`olx-classification:${tid}`},orphaned_thread:{thread_id:tid,status:'INVALIDATED',reason,invalidated_at:now}}}\nasync function invalidateOrphanUnknown(accountId:string,tid:number,prev:any,reason:string){const now=iso(),metadata=orphanMeta(prev,tid,now,reason);await supa(`koki_olx_thread_runtime?olx_account_id=eq.${accountId}&thread_id=eq.${tid}`,{method:'PATCH',body:JSON.stringify({domain:'UNKNOWN',runtime_mode:'COLD',next_reconcile_at:null,metadata,updated_at:now})}).catch(()=>{});await audit({thread_id:tid,decision:'INVALIDATE_ORPHAN_UNKNOWN',reason,olx_account_id:accountId});return metadata}\n"
+          if 'async function invalidateOrphanUnknown(' not in s:
+              if anchor not in s:
+                  raise SystemExit('unresolvedMeta anchor not found')
+              s = s.replace(anchor, anchor + helper, 1)
+
+          old_scan = "const mx=await olx(accountId,`/threads/${tid}/messages`);if(!mx.response.ok){await audit({thread_id:tid,decision:'RETRY',reason:`messages_${mx.response.status}`,thread_watermark:tw,message_watermark:mw,manual_override:manual,unknown_hot:unknownHot.has(tid)});if(!manual&&!unknownHot.has(tid))break;continue}"
+          new_scan = "const mx=await olx(accountId,`/threads/${tid}/messages`);if(!mx.response.ok){const httpStatus=mx.response.status;if(unknownHot.has(tid)&&(httpStatus===404||httpStatus===410)){await invalidateOrphanUnknown(accountId,tid,unknownRuntime.get(tid)?.metadata||{},`messages_${httpStatus}`);unknownHot.delete(tid);skipped.push({thread_id:tid,reason:'orphan_unknown_invalidated',http_status:httpStatus});continue}await audit({thread_id:tid,decision:'RETRY',reason:`messages_${httpStatus}`,thread_watermark:tw,message_watermark:mw,manual_override:manual,unknown_hot:unknownHot.has(tid)});if(!manual&&!unknownHot.has(tid))break;continue}"
+          if "reason:'orphan_unknown_invalidated'" not in s:
+              if old_scan not in s:
+                  raise SystemExit('scan error path anchor not found')
+              s = s.replace(old_scan, new_scan, 1)
+
+          old_list = "if(action==='list_classification_decisions'){const rr=await supa(`koki_olx_thread_runtime?olx_account_id=in.(${ids.join(',')})&domain=eq.UNKNOWN&select=olx_account_id,thread_id,domain,runtime_mode,last_scanned_at,last_changed_at,next_reconcile_at,last_scan_error,metadata&order=last_changed_at.desc`),rows=rr.ok?await rr.json():[];const decisions=rows.filter((r:any)=>r?.metadata?.classification_required?.status==='ACTIVE').map((r:any)=>({olx_account_id:r.olx_account_id,thread_id:Number(r.thread_id),domain:r.domain,runtime_mode:r.runtime_mode,last_scanned_at:r.last_scanned_at,last_changed_at:r.last_changed_at,next_reconcile_at:r.next_reconcile_at,last_scan_error:r.last_scan_error,classification_required:r.metadata.classification_required}));return Response.json({ok:true,action,decisions})}"
+          new_list = "if(action==='list_classification_decisions'){const rr=await supa(`koki_olx_thread_runtime?olx_account_id=in.(${ids.join(',')})&domain=eq.UNKNOWN&select=olx_account_id,thread_id,domain,runtime_mode,last_scanned_at,last_changed_at,next_reconcile_at,last_scan_error,metadata&order=last_changed_at.desc`),rows=rr.ok?await rr.json():[];const decisions:any[]=[];for(const r of rows.filter((x:any)=>x?.metadata?.classification_required?.status==='ACTIVE')){const tid=Number(r.thread_id),account=accounts.find((a:any)=>a.id===r.olx_account_id);if(account?.status==='connected'){try{const live=await olx(String(r.olx_account_id),`/threads/${tid}/messages`);if(live.response.status===404||live.response.status===410){await invalidateOrphanUnknown(String(r.olx_account_id),tid,r.metadata||{},`decision_guard_${live.response.status}`);continue}}catch{}}decisions.push({olx_account_id:r.olx_account_id,thread_id:tid,domain:r.domain,runtime_mode:r.runtime_mode,last_scanned_at:r.last_scanned_at,last_changed_at:r.last_changed_at,next_reconcile_at:r.next_reconcile_at,last_scan_error:r.last_scan_error,classification_required:r.metadata.classification_required})}return Response.json({ok:true,action,decisions})}"
+          if 'decision_guard_${live.response.status}' not in s:
+              if old_list not in s:
+                  raise SystemExit('list decision anchor not found')
+              s = s.replace(old_list, new_list, 1)
+
+          p.write_text(s)
+
+          t = Path('tests/ant95-koki-takeover-contract.test.mjs')
+          ts = t.read_text()
+          marker = "assert.match(src,/status:'queued_reauth_required'/);\n"
+          additions = "assert.match(src,/async function invalidateOrphanUnknown\\(/);\nassert.match(src,/status:'INVALIDATED'/);\nassert.match(src,/runtime_mode:'COLD'/);\nassert.match(src,/decision:'INVALIDATE_ORPHAN_UNKNOWN'/);\nassert.match(src,/httpStatus===404\\|\\|httpStatus===410/);\nassert.match(src,/reason:'orphan_unknown_invalidated'/);\nassert.match(src,/decision_guard_\\$\\{live\\.response\\.status\\}/);\nassert.match(src,/live\\.response\\.status===404\\|\\|live\\.response\\.status===410/);\nassert.match(src,/for\\(const r of rows\\.filter/);\n"
+          if 'INVALIDATE_ORPHAN_UNKNOWN' not in ts:
+              if marker not in ts:
+                  raise SystemExit('test anchor not found')
+              ts = ts.replace(marker, marker + additions, 1)
+              ts = ts.replace("console.log('ANT-95 PASS: 32 assertions');", "console.log('ANT-95 PASS: orphan UNKNOWN lifecycle hardened');")
+              t.write_text(ts)
+          PY
+
+      - name: Run regression contract
+        run: node tests/ant95-koki-takeover-contract.test.mjs
+
+      - name: Commit source fix if needed
+        shell: bash
+        run: |
+          if git diff --quiet -- supabase/functions/koki-takeover/index.ts tests/ant95-koki-takeover-contract.test.mjs; then
+            echo 'No source diff; remediation already applied.'
+            exit 0
+          fi
+          git config user.name 'KOKI Fix Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add supabase/functions/koki-takeover/index.ts tests/ant95-koki-takeover-contract.test.mjs
+          git commit -m 'fix: invalidate orphan UNKNOWN conversations'
+          git push origin HEAD:fix/orphan-unknown-conversation-20260907
