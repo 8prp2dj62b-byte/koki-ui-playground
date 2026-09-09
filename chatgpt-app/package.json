@@ -6,8 +6,9 @@
   "description": "KOKI interactive ChatGPT frontend and MCP gateway",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && tsc --noEmit",
-    "start": "tsx src/server.ts",
+    "build": "vite build && tsc --noEmit && tsc -p tsconfig.server.json",
+    "start": "node server-dist/server.js",
+    "dev:server": "tsx src/server.ts",
     "test": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
