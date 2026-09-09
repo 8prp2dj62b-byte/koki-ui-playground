@@ -1,0 +1,33 @@
+name: Test KOKI ChatGPT App
+
+on:
+  push:
+    branches:
+      - feat/koki-chatgpt-app-v1
+    paths:
+      - 'chatgpt-app/**'
+      - '.github/workflows/test-koki-chatgpt-app.yml'
+  pull_request:
+    paths:
+      - 'chatgpt-app/**'
+      - '.github/workflows/test-koki-chatgpt-app.yml'
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: chatgpt-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: chatgpt-app/package-lock.json
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Build
+        run: npm run build
+      - name: Test
+        run: npm test
