@@ -14,6 +14,7 @@ COPY package.json ./
 RUN npm install --omit=dev --no-audit --no-fund
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server-dist ./server-dist
+RUN mkdir -p /data && chown node:node /data
 EXPOSE 8787
 USER node
-CMD ["node", "server-dist/server.js"]
+CMD ["node", "server-dist/gateway.js"]
