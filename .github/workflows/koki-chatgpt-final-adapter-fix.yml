@@ -1,0 +1,258 @@
+name: KOKI ChatGPT Final Adapter Fix
+
+on:
+  push:
+    branches:
+      - feat/koki-chatgpt-app-v1
+    paths:
+      - '.github/workflows/koki-chatgpt-final-adapter-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/koki-chatgpt-app-v1
+      - name: Patch complete live adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          client=Path('chatgpt-app/src/koki-client.ts')
+          s=client.read_text()
+          s=s.replace("  sell: 'koki-context-orchestrator-staging-v3',\n", "  sell: 'koki-context-orchestrator-staging-v3',\n  draft: 'koki-admin-staging',\n  draftDelete: 'koki-command-center-staging-v28',\n")
+
+          start=s.index("      case 'list_property_searches':")
+          end=s.index("\n\n      case 'get_notifications':", start)
+          replacement="""      case 'list_property_searches': return this.listPropertySearches() as Promise<KokiActionResult<T>>;
+
+      case 'create_sell_draft': return this.createSellDraft(args) as Promise<KokiActionResult<T>>;
+      case 'get_sell_draft': return this.getSellDraft(String(args.draftId || '')) as Promise<KokiActionResult<T>>;
+      case 'update_sell_draft': return this.updateSellDraft(args) as Promise<KokiActionResult<T>>;
+      case 'prepare_sell_upload': return this.uploadSellMedia(args) as Promise<KokiActionResult<T>>;
+      case 'analyze_sell_draft': return this.analyzeSellDraft(args) as Promise<KokiActionResult<T>>;
+      case 'analyze_market': return this.analyzeSellMarket(args) as Promise<KokiActionResult<T>>;
+      case 'optimize_sell_draft': return this.optimizeSellDraft(args) as Promise<KokiActionResult<T>>;
+      case 'validate_sell_draft': return this.validateSellDraft(args) as Promise<KokiActionResult<T>>;
+      case 'publish_sell_draft': return this.publishSellDraft(args) as Promise<KokiActionResult<T>>;
+      case 'delete_sell_draft': return this.deleteSellDraft(args) as Promise<KokiActionResult<T>>;"""
+          s=s[:start]+replacement+s[end:]
+
+          old="""  async setPropertySearchStatus(_searchId: string, _status: 'active' | 'paused' | 'archived') {
+    if (this.mockMode) return this.mockAction('set_property_search_status', { searchId: _searchId, status: _status });
+    return { ok: false, status: 501, error: 'PROPERTY_SEARCH_STATUS_REQUIRES_ADAPTER_QUERY' } as KokiActionResult;
+  }"""
+          new="""  async setPropertySearchStatus(searchId: string, status: 'active' | 'paused' | 'archived') {
+    if (this.mockMode) return this.mockAction('set_property_search_status', { searchId, status });
+    return this.functionRequest<Json>(FN.property, 'POST', { action: 'set_status', search_id: searchId, status });
+  }"""
+          if old not in s: raise SystemExit('property status method marker missing')
+          s=s.replace(old,new,1)
+
+          mstart=s.index('  private async createSellDraft(')
+          mend=s.index('  private async functionRequest<', mstart)
+          methods="""  private async listPropertySearches(): Promise<KokiActionResult<Json>> {
+    return this.functionRequest<Json>(FN.property, 'POST', { action: 'list' });
+  }
+
+  private async getSellDraft(draftId: string): Promise<KokiActionResult<Json>> {
+    if (!draftId) return { ok: false, status: 400, error: 'DRAFT_ID_REQUIRED' };
+    const r = await this.functionRequest<Json>(FN.draft, 'POST', { action: 'get', draft_id: draftId });
+    if (!r.ok) return r;
+    const raw = (r.data || {}) as Json, d = (raw.draft || {}) as Json;
+    return { ok: true, status: r.status, data: { ...raw, draft: normalizeSellDraft(d) } };
+  }
+
+  private async createSellDraft(args: Record<string, unknown>): Promise<KokiActionResult<Json>> {
+    const market = String(args.marketplace || 'OLX').toUpperCase();
+    if (market !== 'OLX') return { ok: false, status: 501, error: 'CURRENT_KOKI_DRAFT_FLOW_SUPPORTS_OLX_ONLY' };
+    const r = await this.functionRequest<Json>(FN.draft, 'POST', { action: 'create' });
+    if (!r.ok) return r;
+    const id = String((r.data as Json)?.draft?.id || '');
+    if (!id) return { ok: false, status: 502, error: 'KOKI_DRAFT_ID_MISSING' };
+    if (args.text != null || args.condition != null) {
+      const u = await this.functionRequest<Json>(FN.draft, 'POST', { action: 'set_user_input', draft_id: id, description: String(args.text || ''), condition: String(args.condition || '') });
+      if (!u.ok) return u;
+    }
+    return this.getSellDraft(id);
+  }
+
+  private async updateSellDraft(args: Record<string, unknown>): Promise<KokiActionResult<Json>> {
+    const patch = (args.patch && typeof args.patch === 'object' ? args.patch : {}) as Json;
+    const id = String(args.draftId || patch.draft_id || '');
+    if (!id) return { ok: false, status: 400, error: 'DRAFT_ID_REQUIRED' };
+    if (patch.description != null || patch.condition != null) {
+      const r = await this.functionRequest<Json>(FN.draft, 'POST', { action: 'set_user_input', draft_id: id, description: patch.description, condition: patch.condition });
+      if (!r.ok) return r;
+    }
+    if (patch.price !== undefined && patch.price !== '') {
+      const value = patch.price == null ? null : Number(patch.price);
+      const r = await this.functionRequest<Json>(FN.draft, 'POST', { action: 'set_owner_price', draft_id: id, value });
+      if (!r.ok) return r;
+    }
+    return this.getSellDraft(id);
+  }
+
+  private async uploadSellMedia(args: Record<string, unknown>): Promise<KokiActionResult<Json>> {
+    const id = String(args.draftId || '');
+    const files = Array.isArray(args.files) ? args.files as Json[] : [];
+    if (!id || !files.length) return { ok: false, status: 400, error: 'DRAFT_AND_FILES_REQUIRED' };
+    if (files.length > 5) return { ok: false, status: 400, error: 'MAX_5_IMAGES' };
+    for (const file of files) {
+      const mime = String(file.type || file.mime_type || '');
+      const base64 = String(file.base64 || '');
+      if (!base64) return { ok: false, status: 400, error: 'IMAGE_BASE64_REQUIRED' };
+      const r = await this.functionRequest<Json>(FN.draft, 'POST', { action: 'add_media', draft_id: id, mime_type: mime, base64 });
+      if (!r.ok) return r;
+    }
+    return this.getSellDraft(id);
+  }
+
+  private async analyzeSellDraft(args: Record<string, unknown>): Promise<KokiActionResult<Json>> {
+    const id = String(args.draftId || '');
+    if (!id) return { ok: false, status: 400, error: 'DRAFT_ID_REQUIRED' };
+    const patch: Json = {};
+    if (args.description != null) patch.description = args.description;
+    if (args.condition != null) patch.condition = args.condition;
+    if (args.price != null) patch.price = args.price;
+    if (Object.keys(patch).length) {
+      const u = await this.updateSellDraft({ draftId: id, patch });
+      if (!u.ok) return u;
+    }
+    const current = await this.getSellDraft(id); if (!current.ok) return current;
+    const d = ((current.data as Json)?.draft || {}) as Json;
+    const text = String(args.description ?? d.description ?? '');
+    const r = await this.functionRequest<Json>(FN.draft, 'POST', { action: 'analyze', draft_id: id, text });
+    if (!r.ok) return r;
+    const fresh = await this.getSellDraft(id);
+    return fresh.ok ? { ok: true, data: { ...(fresh.data as Json), analysis: (r.data as Json)?.understanding || r.data } } : r;
+  }
+
+  private async analyzeSellMarket(args: Record<string, unknown>): Promise<KokiActionResult<Json>> {
+    const id = String(args.draftId || '');
+    const r = await this.functionRequest<Json>(FN.draft, 'POST', { action: 'research', draft_id: id });
+    if (!r.ok) return r;
+    const fresh = await this.getSellDraft(id);
+    const rr = (r.data || {}) as Json;
+    return fresh.ok ? { ok: true, data: { ...(fresh.data as Json), marketAnalysis: rr.research?.result || rr.research || rr.strategy || rr } } : r;
+  }
+
+  private async optimizeSellDraft(args: Record<string, unknown>): Promise<KokiActionResult<Json>> {
+    const id = String(args.draftId || '');
+    const r = await this.functionRequest<Json>(FN.draft, 'POST', { action: 'generate_listing', draft_id: id });
+    if (!r.ok) return r;
+    const fresh = await this.getSellDraft(id);
+    return fresh.ok ? { ok: true, data: { ...(fresh.data as Json), optimization: (r.data as Json)?.listing || r.data } } : r;
+  }
+
+  private async validateSellDraft(args: Record<string, unknown>): Promise<KokiActionResult<Json>> {
+    const id = String(args.draftId || '');
+    const r = await this.functionRequest<Json>(FN.draft, 'POST', { action: 'publish_readiness', draft_id: id });
+    if (!r.ok) return r;
+    const fresh = await this.getSellDraft(id);
+    return fresh.ok ? { ok: true, data: { ...(fresh.data as Json), validation: r.data } } : r;
+  }
+
+  private async publishSellDraft(args: Record<string, unknown>): Promise<KokiActionResult<Json>> {
+    const id = String(args.draftId || '');
+    if (!id) return { ok: false, status: 400, error: 'DRAFT_ID_REQUIRED' };
+    const ready = await this.functionRequest<Json>(FN.draft, 'POST', { action: 'publish_readiness', draft_id: id });
+    if (!ready.ok) return ready;
+    if ((ready.data as Json)?.ready !== true) return { ok: false, status: 409, error: 'PUBLISH_NOT_READY', data: ready.data };
+    const r = await this.functionRequest<Json>(FN.draft, 'POST', { action: 'execute_publish', draft_id: id });
+    if (!r.ok) return r;
+    return { ok: true, status: r.status, data: { published: true, draftId: id, ...(r.data as Json) } };
+  }
+
+  private async deleteSellDraft(args: Record<string, unknown>): Promise<KokiActionResult<Json>> {
+    const id = String(args.draftId || '');
+    if (!id) return { ok: false, status: 400, error: 'DRAFT_ID_REQUIRED' };
+    return this.functionRequest<Json>(FN.draftDelete, 'POST', { action: 'delete', draft_id: id });
+  }
+
+"""
+          s=s[:mstart]+methods+s[mend:]
+          client.write_text(s)
+
+          server=Path('chatgpt-app/src/server.ts')
+          s=server.read_text()
+          s=s.replace("description: 'Creates temporary upload targets for up to five SELL images. It does not publish the listing.',", "description: 'Uploads up to five owner-selected images into the existing authenticated KOKI draft media flow. It does not publish.',")
+          s=s.replace("inputSchema: { draftId: z.string().min(1), files: z.array(z.object({ name: z.string(), type: z.string(), size: z.number().int().positive() })).min(1).max(5) },", "inputSchema: { draftId: z.string().min(1), files: z.array(z.object({ name: z.string(), type: z.enum(['image/jpeg','image/png','image/webp']), size: z.number().int().positive().max(8000000), base64: z.string().min(1) })).min(1).max(5) },")
+          s=s.replace("inputSchema: { draftId: z.string().min(1) },\n    },\n    {\n      name: 'analyze_market'", "inputSchema: { draftId: z.string().min(1), description: z.string().optional(), condition: z.enum(['NEW','USED']).optional(), price: z.number().positive().optional() },\n    },\n    {\n      name: 'analyze_market'",1)
+          s=s.replace("app.use(express.json({ limit: '2mb' }));", "app.use(express.json({ limit: '16mb' }));")
+          server.write_text(s)
+
+          app=Path('chatgpt-app/src/widget/App.tsx')
+          s=app.read_text()
+          old="""  const [description, setDescription] = useState(String(draft.description || draft.text || ''));
+  const [title, setTitle] = useState(String(draft.title || ''));
+  const [price, setPrice] = useState(draft.price != null ? String(draft.price) : '');
+  const [condition, setCondition] = useState(String(draft.condition || 'USED'));
+  const [files, setFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  const stage = String(draft.stage || draft.status || 'DRAFT');"""
+          new="""  const listing = record(draft.listing_content);
+  const edits = record(draft.user_edits);
+  const facts = record(draft.fact_snapshot);
+  const conditionFact = record(facts.condition || facts.state);
+  const [description, setDescription] = useState(String(draft.description || edits.product_description || listing.description || ''));
+  const [title, setTitle] = useState(String(draft.title || listing.title || ''));
+  const [price, setPrice] = useState(draft.price != null ? String(draft.price) : draft.owner_desired_price_eur != null ? String(draft.owner_desired_price_eur) : '');
+  const [condition, setCondition] = useState(String(draft.condition || edits.condition || conditionFact.value || 'USED').toUpperCase());
+  const [files, setFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  const stage = String(draft.workflow_state || draft.stage || draft.status || 'DRAFT');"""
+          if old not in s: raise SystemExit('sell draft state marker missing')
+          s=s.replace(old,new,1)
+          ustart=s.index('  const upload = async () => {', s.index('function SellDraft'))
+          uend=s.index('\n\n  return <>', ustart)
+          upload="""  const upload = async () => {
+    if (!draftId || !files.length) return;
+    setUploading(true);
+    try {
+      for (const f of files) {
+        if (f.size > 8_000_000) throw new Error('MEDIA_TOO_LARGE');
+        const base64 = await fileToBase64(f);
+        await callTool('prepare_sell_upload', { draftId, files: [{ name: f.name, type: f.type, size: f.size, base64 }] });
+      }
+      setFiles([]);
+      await callTool('get_sell_draft', { draftId });
+    } finally { setUploading(false); }
+  };"""
+          s=s[:ustart]+upload+s[uend:]
+          s=s.replace("<PageHead eyebrow=\"Нова продажба\" title={String(draft.title || 'Подготви обявата')} subtitle={stage} />", "<PageHead eyebrow=\"Нова продажба\" title={String(title || listing.title || 'Подготви обявата')} subtitle={stage} />")
+          s=s.replace("onClick={() => void callTool('analyze_sell_draft', { draftId })}", "onClick={() => void callTool('analyze_sell_draft', { draftId, description, condition, price: price ? Number(price) : undefined })}")
+          helper="""
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error('FILE_READ_FAILED'));
+    reader.onload = () => resolve(String(reader.result || '').replace(/^data:[^;]+;base64,/, ''));
+    reader.readAsDataURL(file);
+  });
+}
+"""
+          marker='function record(value: unknown): AnyRecord {'
+          if helper.strip() not in s:
+              s=s.replace(marker,helper+'\n'+marker,1)
+          app.write_text(s)
+          PY
+
+          cd chatgpt-app
+          npm install --no-audit --no-fund
+          npm run build
+          npm test
+          cd ..
+          git config user.name 'koki-rte'
+          git config user.email 'koki-rte@users.noreply.github.com'
+          git add chatgpt-app/src/koki-client.ts chatgpt-app/src/server.ts chatgpt-app/src/widget/App.tsx
+          git commit -m 'fix(chatgpt): complete live KOKI adapters'
+          git push origin HEAD:feat/koki-chatgpt-app-v1
