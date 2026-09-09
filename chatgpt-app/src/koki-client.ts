@@ -143,27 +143,27 @@ export class KokiApiClient {
 
   async createPropertySearch(text: string, _title?: string) {
     if (this.mockMode) return this.mockAction('create_property_search', { text });
-    return this.functionRequest(FN.property, 'POST', { action: 'create', text });
+    return this.functionRequest<Json>(FN.property, 'POST', { action: 'create', text });
   }
 
   async getPropertySearch(searchId: string) {
     if (this.mockMode) return this.mockAction('get_property_search', { searchId });
-    return this.functionRequest(FN.property, 'POST', { action: 'results', search_id: searchId });
+    return this.functionRequest<Json>(FN.property, 'POST', { action: 'results', search_id: searchId });
   }
 
   async getPropertyResults(searchId: string) {
     if (this.mockMode) return this.mockAction('get_property_results', { searchId });
-    return this.functionRequest(FN.property, 'POST', { action: 'results', search_id: searchId });
+    return this.functionRequest<Json>(FN.property, 'POST', { action: 'results', search_id: searchId });
   }
 
   async refreshPropertySearch(searchId: string) {
     if (this.mockMode) return this.mockAction('refresh_property_search', { searchId });
-    return this.functionRequest(FN.property, 'POST', { action: 'refresh', search_id: searchId });
+    return this.functionRequest<Json>(FN.property, 'POST', { action: 'refresh', search_id: searchId });
   }
 
   async addPropertyCriterion(searchId: string, text: string) {
     if (this.mockMode) return this.mockAction('add_property_criterion', { searchId, text });
-    return this.functionRequest(FN.property, 'POST', { action: 'add_criterion', search_id: searchId, text });
+    return this.functionRequest<Json>(FN.property, 'POST', { action: 'add_criterion', search_id: searchId, text });
   }
 
   async setPropertySearchStatus(_searchId: string, _status: 'active' | 'paused' | 'archived') {
@@ -173,16 +173,16 @@ export class KokiApiClient {
 
   async setPropertyResultState(searchId: string, listingId: string, state: 'SEEN' | 'SAVED' | 'DISMISSED') {
     if (this.mockMode) return this.mockAction('set_property_result_state', { searchId, listingId, state });
-    return this.functionRequest(FN.property, 'POST', { action: 'set_state', search_id: searchId, listing_id: listingId, state });
+    return this.functionRequest<Json>(FN.property, 'POST', { action: 'set_state', search_id: searchId, listing_id: listingId, state });
   }
 
   private async summary(): Promise<KokiActionResult<Json>> {
-    return this.functionRequest(FN.command, 'GET', undefined, '?format=summary');
+    return this.functionRequest<Json>(FN.command, 'GET', undefined, '?format=summary');
   }
 
   private async detail(id: string): Promise<KokiActionResult<Json>> {
     if (!id) return { ok: false, status: 400, error: 'CONVERSATION_ID_REQUIRED' };
-    return this.functionRequest(FN.command, 'GET', undefined, `?format=detail&id=${encodeURIComponent(id)}`);
+    return this.functionRequest<Json>(FN.command, 'GET', undefined, `?format=detail&id=${encodeURIComponent(id)}`);
   }
 
   private async ensureConversation(id: string): Promise<KokiActionResult<Json>> {
@@ -237,10 +237,10 @@ export class KokiApiClient {
     const id = String(args.conversationId || args.negotiationId || args.decisionId || '');
     const owned = await this.ensureConversation(id); if (!owned.ok) return owned;
     const decision = String(args.decision || '').toUpperCase();
-    if (decision === 'CONTINUE_KOKI') return this.functionRequest(FN.admin, 'POST', { action: 'return_to_koki', negotiation_id: id });
-    if (decision === 'ARCHIVE') return this.functionRequest(FN.admin, 'POST', { action: 'set_conversation_status', negotiation_id: id, target_status: 'inactive' });
+    if (decision === 'CONTINUE_KOKI') return this.functionRequest<Json>(FN.admin, 'POST', { action: 'return_to_koki', negotiation_id: id });
+    if (decision === 'ARCHIVE') return this.functionRequest<Json>(FN.admin, 'POST', { action: 'set_conversation_status', negotiation_id: id, target_status: 'inactive' });
     if ((decision === 'ACCEPT' || decision === 'COUNTER') && String(args.note || '').trim()) {
-      return this.functionRequest(FN.admin, 'POST', { action: 'admin_send', negotiation_id: id, text: String(args.note).trim() });
+      return this.functionRequest<Json>(FN.admin, 'POST', { action: 'admin_send', negotiation_id: id, text: String(args.note).trim() });
     }
     return { ok: false, status: 409, error: 'DECISION_MESSAGE_MUST_BE_GENERATED_BY_EXISTING_KOKI_AI_FLOW' };
   }
@@ -256,10 +256,10 @@ export class KokiApiClient {
   }
 
   private async markNotifications(args: Record<string, unknown>): Promise<KokiActionResult<Json>> {
-    if (args.all === true) return this.functionRequest(FN.push, 'POST', { action: 'mark_all_read' });
+    if (args.all === true) return this.functionRequest<Json>(FN.push, 'POST', { action: 'mark_all_read' });
     const ids = Array.isArray(args.ids) ? args.ids.map(String).filter(Boolean) : [];
     for (const id of ids) {
-      const r = await this.functionRequest(FN.push, 'POST', { action: 'mark_read', id });
+      const r = await this.functionRequest<Json>(FN.push, 'POST', { action: 'mark_read', id });
       if (!r.ok) return r;
     }
     return { ok: true, data: { updated: ids.length } };
@@ -280,10 +280,10 @@ export class KokiApiClient {
 
   private async updateNotificationSettings(args: Record<string, unknown>): Promise<KokiActionResult<Json>> {
     const p = (args.patch && typeof args.patch === 'object' ? args.patch : {}) as Json;
-    if (typeof p.push === 'boolean') return this.functionRequest(FN.push, 'POST', { action: 'set_notifications', global_enabled: p.push });
-    if (typeof p.badge === 'boolean') return this.functionRequest(FN.push, 'POST', { action: 'set_notifications', badge_enabled: p.badge });
+    if (typeof p.push === 'boolean') return this.functionRequest<Json>(FN.push, 'POST', { action: 'set_notifications', global_enabled: p.push });
+    if (typeof p.badge === 'boolean') return this.functionRequest<Json>(FN.push, 'POST', { action: 'set_notifications', badge_enabled: p.badge });
     const map: Record<string,string> = { sellerMessages: 'seller_messages', decisions: 'manual_intervention', listingResults: 'listing_result' };
-    for (const [key, type] of Object.entries(map)) if (typeof p[key] === 'boolean') return this.functionRequest(FN.push, 'POST', { action: 'set_notifications', type, enabled: p[key] });
+    for (const [key, type] of Object.entries(map)) if (typeof p[key] === 'boolean') return this.functionRequest<Json>(FN.push, 'POST', { action: 'set_notifications', type, enabled: p[key] });
     return { ok: false, status: 400, error: 'NO_SUPPORTED_SETTING_CHANGE' };
   }
 
@@ -310,13 +310,13 @@ export class KokiApiClient {
   private async disconnectMarketplace(args: Record<string, unknown>): Promise<KokiActionResult<Json>> {
     const market = String(args.marketplace || '').toUpperCase();
     if (market !== 'OLX') return { ok: false, status: 501, error: 'MARKETPLACE_DISCONNECT_NOT_EXPOSED_BY_CURRENT_KOKI_API' };
-    return this.functionRequest(FN.command, 'POST', {}, '/auth/olx/disconnect');
+    return this.functionRequest<Json>(FN.command, 'POST', {}, '/auth/olx/disconnect');
   }
 
   private async createSellDraft(args: Record<string, unknown>): Promise<KokiActionResult<Json>> {
     const market = String(args.marketplace || 'OLX').toUpperCase();
     if (market !== 'OLX') return { ok: false, status: 501, error: 'CURRENT_MASTER_SELL_SUPPORTS_OLX_ONLY' };
-    return this.functionRequest(FN.sell, 'POST', {
+    return this.functionRequest<Json>(FN.sell, 'POST', {
       action: 'draft',
       client_request_id: String(args.clientRequestId || args.client_request_id || crypto.randomUUID()),
       product_description: String(args.text || args.productDescription || ''),
@@ -330,14 +330,14 @@ export class KokiApiClient {
     const patch = (args.patch && typeof args.patch === 'object' ? args.patch : {}) as Json;
     const saleId = String(args.saleId || args.draftId || patch.sale_id || '');
     if (!saleId) return { ok: false, status: 400, error: 'SALE_ID_REQUIRED' };
-    return this.functionRequest(FN.sell, 'POST', { action: 'update', confirm_update: true, sale_id: saleId, payload: patch });
+    return this.functionRequest<Json>(FN.sell, 'POST', { action: 'update', confirm_update: true, sale_id: saleId, payload: patch });
   }
 
   private async publishSellDraft(args: Record<string, unknown>): Promise<KokiActionResult<Json>> {
     const p = (args.payload && typeof args.payload === 'object' ? args.payload : args) as Json;
     const saleId = String(p.saleId || p.sale_id || p.draftId || '');
     if (!saleId) return { ok: false, status: 400, error: 'SALE_ID_REQUIRED' };
-    return this.functionRequest(FN.sell, 'POST', {
+    return this.functionRequest<Json>(FN.sell, 'POST', {
       action: 'publish', confirm_publish: true, sale_id: saleId,
       title: p.title, description: p.description, category_id: p.categoryId ?? p.category_id,
       city_id: p.cityId ?? p.city_id, district_id: p.districtId ?? p.district_id,
