@@ -11,6 +11,7 @@
     "src/gateway.ts",
     "src/server.ts",
     "src/koki-client.ts",
+    "src/review-pages.ts",
     "src/types.ts"
   ],
   "exclude": ["src/widget/**", "tests/**"]
