@@ -1,0 +1,54 @@
+name: Test KOKI ChatGPT App
+
+on:
+  push:
+    branches:
+      - feat/koki-chatgpt-app-v1
+    paths:
+      - 'chatgpt-app/**'
+      - '.github/workflows/test-koki-chatgpt-app.yml'
+  pull_request:
+    paths:
+      - 'chatgpt-app/**'
+      - '.github/workflows/test-koki-chatgpt-app.yml'
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: chatgpt-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Build
+        run: npm run build
+      - name: Test
+        run: npm test
+      - name: Smoke compiled OAuth gateway
+        env:
+          KOKI_MOCK_MODE: '1'
+          PORT: '8787'
+          MCP_INTERNAL_PORT: '8788'
+          PUBLIC_BASE_URL: 'http://127.0.0.1:8787'
+        run: |
+          npm start > /tmp/koki-chatgpt-app.log 2>&1 &
+          PID=$!
+          trap 'kill $PID 2>/dev/null || true' EXIT
+          for i in $(seq 1 20); do
+            if curl --silent http://127.0.0.1:8787/.well-known/oauth-authorization-server > /tmp/oauth.json \
+              && grep -q 'authorization_endpoint' /tmp/oauth.json \
+              && curl --silent -D /tmp/mcp.headers -o /tmp/mcp.body http://127.0.0.1:8787/mcp \
+              && grep -qi 'www-authenticate: Bearer' /tmp/mcp.headers; then
+              cat /tmp/oauth.json
+              cat /tmp/mcp.headers
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/koki-chatgpt-app.log
+          exit 1

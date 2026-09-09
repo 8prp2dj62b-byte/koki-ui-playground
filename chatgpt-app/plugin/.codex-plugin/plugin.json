@@ -1,0 +1,28 @@
+{
+  "name": "koki-marketplace-assistant",
+  "version": "1.0.0",
+  "description": "KOKI connects ChatGPT to marketplace search, conversations, negotiation controls, sale listings, and property search.",
+  "homepage": "https://koki.tonyshodling.eu/chatgpt/",
+  "keywords": ["marketplace", "shopping", "selling", "negotiation", "property-search"],
+  "interface": {
+    "displayName": "KOKI",
+    "shortDescription": "Search listings, manage negotiations, and create marketplace listings from ChatGPT.",
+    "longDescription": "KOKI connects ChatGPT to your KOKI marketplace account so you can search real listings on supported marketplaces, review and manage BUY and SELL conversations, control automated negotiations, create and optimize sale drafts, publish supported listings, and run property searches against imot.bg. KOKI uses your existing marketplace connections and does not expose marketplace credentials to ChatGPT.",
+    "developerName": "KOKI",
+    "category": "Shopping",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://koki.tonyshodling.eu/chatgpt/",
+    "privacyPolicyURL": "https://koki.tonyshodling.eu/chatgpt/privacy",
+    "termsOfServiceURL": "https://koki.tonyshodling.eu/chatgpt/terms",
+    "defaultPrompt": [
+      "Show my active KOKI operations and anything that needs my decision.",
+      "Find three-room apartments in Bansko under €140,000 and show only real source listings.",
+      "Show my unread marketplace conversations and summarize the latest offers.",
+      "Create a new sale draft from my item details and suggest a fair price.",
+      "Stop KOKI for this conversation and let me take over."
+    ],
+    "brandColor": "#335CFF",
+    "composerIcon": "./assets/koki-logo.svg",
+    "logo": "./assets/koki-logo.svg"
+  }
+}
