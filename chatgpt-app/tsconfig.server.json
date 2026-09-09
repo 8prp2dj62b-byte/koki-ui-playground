@@ -8,6 +8,7 @@
     "sourceMap": false
   },
   "include": [
+    "src/gateway.ts",
     "src/server.ts",
     "src/koki-client.ts",
     "src/types.ts"
