@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "server-dist",
+    "rootDir": "src",
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": [
+    "src/server.ts",
+    "src/koki-client.ts",
+    "src/types.ts"
+  ],
+  "exclude": ["src/widget/**", "tests/**"]
+}
