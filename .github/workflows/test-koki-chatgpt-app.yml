@@ -29,3 +29,20 @@ jobs:
         run: npm run build
       - name: Test
         run: npm test
+      - name: Smoke compiled gateway
+        env:
+          KOKI_MOCK_MODE: '1'
+          PORT: '8787'
+        run: |
+          npm start > /tmp/koki-chatgpt-app.log 2>&1 &
+          PID=$!
+          trap 'kill $PID 2>/dev/null || true' EXIT
+          for i in $(seq 1 20); do
+            if curl --fail --silent http://127.0.0.1:8787/health > /tmp/koki-health.json; then
+              cat /tmp/koki-health.json
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/koki-chatgpt-app.log
+          exit 1
