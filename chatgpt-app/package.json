@@ -1,14 +1,14 @@
 {
   "name": "koki-chatgpt-app",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "KOKI interactive ChatGPT frontend and MCP gateway",
+  "description": "KOKI interactive ChatGPT frontend, OAuth gateway and MCP server",
   "scripts": {
     "dev": "vite",
     "build": "vite build && tsc --noEmit && tsc -p tsconfig.server.json",
-    "start": "node server-dist/server.js",
-    "dev:server": "tsx src/server.ts",
+    "start": "node server-dist/gateway.js",
+    "dev:server": "tsx src/gateway.ts",
     "test": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
