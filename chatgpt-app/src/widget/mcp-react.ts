@@ -17,9 +17,8 @@ export interface AppState {
 
 /**
  * Small React lifecycle wrapper around the stable MCP Apps core API.
- * Kept local because some published ext-apps versions have shipped a React
- * subpath typing/export mismatch while the App/PostMessageTransport API is
- * stable and is the protocol source of truth.
+ * The embedded host owns transport teardown; the wrapper only prevents stale
+ * async state updates after React unmount.
  */
 export function useApp({
   appInfo,
@@ -34,18 +33,14 @@ export function useApp({
 
   useEffect(() => {
     let mounted = true;
-    let instance: App | null = null;
 
     const connect = async () => {
       try {
-        instance = new App(appInfo, capabilities, { autoResize, strict });
+        const instance = new App(appInfo, capabilities, { autoResize, strict });
         onAppCreated?.(instance);
         const transport = new PostMessageTransport(window.parent, window.parent);
         await instance.connect(transport);
-        if (!mounted) {
-          void instance.close();
-          return;
-        }
+        if (!mounted) return;
         setApp(instance);
         setIsConnected(true);
         setError(null);
@@ -58,10 +53,7 @@ export function useApp({
     };
 
     void connect();
-    return () => {
-      mounted = false;
-      if (instance) void instance.close();
-    };
+    return () => { mounted = false; };
     // The bridge is intentionally initialized once per widget lifecycle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
