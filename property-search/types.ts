@@ -58,6 +58,7 @@ export interface PropertyListingSummary {
   currency: 'EUR' | null;
   areaM2: number | null;
   pricePerM2: number | null;
+  constructionType: string | null;
   locationText: string | null;
   thumbnailUrl: string | null;
   fetchedAt: string;
@@ -68,7 +69,6 @@ export interface PropertyListing extends PropertyListingSummary {
   propertyType: string | null;
   floor: number | null;
   totalFloors: number | null;
-  constructionType: string | null;
   constructionYear: number | null;
   seller: {
     type: 'agency' | 'private' | 'unknown';
