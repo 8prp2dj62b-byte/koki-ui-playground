@@ -1,5 +1,6 @@
 import * as cheerio from 'cheerio';
 import { ImotClient as BaseImotClient, type ListingCache } from './imot-client.js';
+import { ImotTaxonomyResolver } from './imot-taxonomy.js';
 import type { PropertyListing, PropertyListingSummary } from './types.js';
 
 /**
@@ -10,8 +11,8 @@ import type { PropertyListing, PropertyListingSummary } from './types.js';
  * inferred values are involved.
  */
 export class ImotClient extends BaseImotClient {
-  constructor(cache?: ListingCache, fetchImpl: typeof fetch = fetch) {
-    super(cache, fetchImpl);
+  constructor(cache?: ListingCache, fetchImpl: typeof fetch = fetch, taxonomy?: ImotTaxonomyResolver) {
+    super(cache, fetchImpl, taxonomy);
   }
 
   override parseSearchPage(html: string, pageUrl: string): PropertyListingSummary[] {
