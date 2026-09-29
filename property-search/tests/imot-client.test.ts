@@ -39,12 +39,25 @@ const popovoHouseRequest: PropertySearchRequest = {
   freeTextConstraints: [],
 };
 
+const goceDelchevBrickRequest: PropertySearchRequest = {
+  operation: 'search_properties',
+  transaction: 'sale',
+  propertyTypes: ['3-room'],
+  location: { city: 'София', neighborhoods: ['Гоце Делчев'] },
+  requiredFeatures: [],
+  preferredFeatures: [],
+  excludedFeatures: [],
+  freeTextConstraints: ['тухла'],
+};
+
 const taxonomyHtml = `
   <html><body>
     <a href="/obiavi/prodazhbi/grad-sliven">Имоти град Сливен</a>
     <a href="/obiavi/prodazhbi/oblast-sliven">Имоти област Сливен</a>
     <a href="/obiavi/prodazhbi/oblast-sliven/gr-sliven">гр. Сливен в област Сливен</a>
     <a href="/obiavi/prodazhbi/oblast-blagoevgrad/gr-bansko">гр. Банско</a>
+    <a href="/obiavi/prodazhbi/grad-sofiya">град София</a>
+    <a href="/obiavi/prodazhbi/grad-sofiya/gotse-delchev">Гоце Делчев</a>
   </body></html>`;
 
 const taxonomyFetch: typeof fetch = async (input) => {
@@ -88,6 +101,14 @@ test('Bansko 3-room request maps through imot.bg taxonomy to the public route', 
   );
 });
 
+test('Sofia single-neighbourhood request uses the direct imot.bg neighbourhood route', async () => {
+  const client = new ImotClient(undefined, taxonomyFetch);
+  assert.equal(
+    await client.buildSearchUrl(goceDelchevBrickRequest),
+    'https://www.imot.bg/obiavi/prodazhbi/grad-sofiya/gotse-delchev/tristaen'
+  );
+});
+
 test('Sliven house request resolves dynamically instead of failing hardcoded city taxonomy', async () => {
   const client = new ImotClient(undefined, taxonomyFetch);
   assert.equal(
@@ -110,7 +131,7 @@ test('search parser only returns real /obiava-* links and deduplicates by listin
     <html><body>
       <article>
         <a href="/obiava-1c178281172887622-real-one" title="Тристаен Банско">Тристаен Банско</a>
-        <span>120 000 €</span><span>90 м²</span><span>1 333 €/m²</span>
+        <span>120 000 €</span><span>90 м²</span><span>1 333 €/m²</span><span>Тухла</span>
         <img src="https://imotstatic2.focus.bg/imot/photos/test.jpg">
       </article>
       <article><a href="/search/prodazhbi">not a listing</a></article>
@@ -122,6 +143,7 @@ test('search parser only returns real /obiava-* links and deduplicates by listin
   assert.equal(result[0].price, 120000);
   assert.equal(result[0].areaM2, 90);
   assert.equal(result[0].pricePerM2, 1333);
+  assert.equal(result[0].constructionType, 'тухла');
 });
 
 test('detail parser leaves phone null when source does not expose tel link', () => {
