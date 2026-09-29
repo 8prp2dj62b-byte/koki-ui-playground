@@ -15,17 +15,14 @@ export class PropertySearchService {
     geminiModel?: string;
   }) {
     const key = options?.geminiApiKey || process.env.GEMINI_API_KEY || '';
-    this.store = new PropertySearchStore(options?.dbPath);
-
-    // One resolver per service. The compiler and source client now share the same live
-    // taxonomy cache instead of independently crawling imot.bg for the same user search.
     const taxonomy = new ImotTaxonomyResolver();
+    this.store = new PropertySearchStore(options?.dbPath);
     this.compiler = new GeminiPropertySearchCompiler({
       apiKey: key,
       model: options?.geminiModel || process.env.GEMINI_MODEL || undefined,
       nomenclatureProvider: () => taxonomy.getGeminiNomenclature(),
     });
-    this.client = new ImotClient(this.store, fetch, taxonomy);
+    this.client = new ImotClient(this.store);
   }
 
   async createSearch(ownerKey: string, input: { text: string; title?: string }) {
