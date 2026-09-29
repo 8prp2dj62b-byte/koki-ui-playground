@@ -87,15 +87,40 @@ export class ImotTaxonomyResolver {
   async resolveLocationRoute(location: ImotLocationRequest, transaction: TransactionRoute): Promise<string> {
     const city = cleanLocationName(location.city);
     const district = cleanLocationName(location.district);
+    const neighborhoods = (location.neighborhoods || []).map(cleanLocationName).filter(Boolean);
     if (!city && !district) throw new Error('IMOT_LOCATION_REQUIRED');
 
-    const cacheKey = `${transaction}|${normalizeKey(city)}|${normalizeKey(district)}`;
+    const cacheKey = `${transaction}|${normalizeKey(city)}|${normalizeKey(district)}|${neighborhoods.map(normalizeKey).join(',')}`;
     const cached = this.routeCache.get(cacheKey);
     if (cached) return cached;
 
-    const paths = await this.getTaxonomyPaths(transaction);
-    const route = city ? resolveCityRoute(paths, city, district) : resolveDistrictRoute(paths, district!);
+    let paths = await this.getTaxonomyPaths(transaction);
+    let route = city ? resolveCityRoute(paths, city, district) : resolveDistrictRoute(paths, district!);
+
+    // The common path must stay cheap: sitemap + transaction root are enough for most
+    // cities. Only crawl oblast pages when the requested city is actually missing.
+    if (!route && city) {
+      route = await this.discoverCityRoute(paths, transaction, city, district);
+      if (route) paths = await this.getTaxonomyPaths(transaction);
+    }
+
     if (!route) throw new Error(`IMOT_TAXONOMY_RESOLUTION_FAILED:${city || district || ''}`);
+
+    // imot.bg exposes a single selected neighbourhood directly in the public route
+    // (e.g. grad-sofiya/gotse-delchev). Use that route instead of fetching every
+    // listing for the whole city and filtering hundreds of detail pages afterwards.
+    if (city && neighborhoods.length === 1) {
+      let neighborhoodRoute = resolveNeighborhoodRoute(paths, route, neighborhoods[0]);
+      if (!neighborhoodRoute) {
+        paths = await this.extendFromRoutePage(paths, transaction, route);
+        neighborhoodRoute = resolveNeighborhoodRoute(paths, route, neighborhoods[0]);
+      }
+      if (!neighborhoodRoute) {
+        throw new Error(`IMOT_NEIGHBORHOOD_RESOLUTION_FAILED:${neighborhoods[0]}`);
+      }
+      route = neighborhoodRoute;
+    }
+
     this.routeCache.set(cacheKey, route);
     return route;
   }
@@ -139,10 +164,64 @@ export class ImotTaxonomyResolver {
   private getTaxonomyPaths(transaction: TransactionRoute): Promise<string[]> {
     let pending = this.taxonomyCache.get(transaction);
     if (!pending) {
-      pending = this.loadTaxonomyPaths(transaction);
+      pending = this.loadTaxonomyPaths(transaction).catch(error => {
+        // A transient 429/timeout must not poison the resolver for the lifetime of the process.
+        this.taxonomyCache.delete(transaction);
+        throw error;
+      });
       this.taxonomyCache.set(transaction, pending);
     }
     return pending;
+  }
+
+  private async extendFromRoutePage(paths: string[], transaction: TransactionRoute, route: string) {
+    try {
+      const html = await this.getText(`${BASE}/obiavi/${transaction}/${route}`);
+      const merged = [...new Set([...paths, ...extractImotTaxonomyPaths(html, transaction)])];
+      this.taxonomyCache.set(transaction, Promise.resolve(merged));
+      return merged;
+    } catch {
+      return paths;
+    }
+  }
+
+  private async discoverCityRoute(
+    initialPaths: string[],
+    transaction: TransactionRoute,
+    city: string,
+    district?: string | null,
+  ): Promise<string | null> {
+    let paths = initialPaths;
+
+    // If the oblast is known, one source request is enough.
+    if (district) {
+      paths = await this.extendFromRoutePage(paths, transaction, `oblast-${imotSlug(district)}`);
+      return resolveCityRoute(paths, city, district);
+    }
+
+    // Rare fallback for bare settlements missing from sitemap/root: inspect oblast pages
+    // in small batches and stop as soon as the source exposes the requested city.
+    const oblastRoots = [...new Set(
+      paths.map(route => route.split('/').filter(Boolean)[0] || '')
+        .filter(segment => segment.startsWith('oblast-')),
+    )].sort();
+
+    for (let index = 0; index < oblastRoots.length; index += DISCOVERY_CONCURRENCY) {
+      const batch = oblastRoots.slice(index, index + DISCOVERY_CONCURRENCY);
+      const nested = await Promise.all(batch.map(async oblastRoot => {
+        try {
+          const html = await this.getText(`${BASE}/obiavi/${transaction}/${oblastRoot}`);
+          return extractImotTaxonomyPaths(html, transaction);
+        } catch {
+          return [];
+        }
+      }));
+      paths = [...new Set([...paths, ...nested.flat()])];
+      this.taxonomyCache.set(transaction, Promise.resolve(paths));
+      const route = resolveCityRoute(paths, city, district);
+      if (route) return route;
+    }
+    return null;
   }
 
   private async loadTaxonomyPaths(transaction: TransactionRoute): Promise<string[]> {
@@ -155,33 +234,11 @@ export class ImotTaxonomyResolver {
       for (const route of extractImotTaxonomyPaths(sitemapHtml, transaction)) collected.add(route);
     } catch {}
 
-    // The transaction root gives us the authoritative oblast roots even when the sitemap is
-    // unavailable or incomplete.
+    // The transaction root gives us the authoritative city/oblast roots even when the
+    // sitemap is unavailable or incomplete. Do NOT crawl every oblast here: doing that on
+    // every cold start turns one user search into dozens of imot.bg requests.
     const indexHtml = await this.getText(`${BASE}/obiavi/${transaction}`);
     for (const route of extractImotTaxonomyPaths(indexHtml, transaction)) collected.add(route);
-
-    // Critical completeness step: crawl every source-exposed oblast root once and merge its
-    // locality links. This is what makes towns such as Popovo discoverable as
-    // oblast-targovishte/gr-popovo instead of failing taxonomy resolution.
-    const oblastRoots = [...new Set(
-      [...collected]
-        .map(route => route.split('/').filter(Boolean)[0] || '')
-        .filter(segment => segment.startsWith('oblast-')),
-    )].sort();
-
-    const nested = await mapLimit(oblastRoots, DISCOVERY_CONCURRENCY, async oblastRoot => {
-      try {
-        const html = await this.getText(`${BASE}/obiavi/${transaction}/${oblastRoot}`);
-        return extractImotTaxonomyPaths(html, transaction);
-      } catch {
-        // One broken oblast page must not invalidate the last usable source taxonomy.
-        return [];
-      }
-    });
-
-    for (const routes of nested) {
-      for (const route of routes) collected.add(route);
-    }
 
     return [...collected];
   }
@@ -310,6 +367,24 @@ export function resolveCityRoute(paths: string[], city: string, district?: strin
   if (topLevel.length === 1) return topLevel[0];
   if (nested.length > 1) throw new Error(`IMOT_LOCATION_AMBIGUOUS:${city}`);
   return null;
+}
+
+export function resolveNeighborhoodRoute(paths: string[], cityRoute: string, neighborhood: string): string | null {
+  const wanted = imotSlug(neighborhood);
+  if (!wanted) return null;
+  const citySegments = cityRoute.split('/').filter(Boolean);
+  const matches = new Set<string>();
+
+  for (const path of paths) {
+    const segments = path.split('/').filter(Boolean);
+    if (segments.length <= citySegments.length) continue;
+    if (!citySegments.every((segment, index) => segments[index] === segment)) continue;
+    const neighborhoodIndex = segments.findIndex(
+      (segment, index) => index >= citySegments.length && segment === wanted,
+    );
+    if (neighborhoodIndex >= 0) matches.add(segments.slice(0, neighborhoodIndex + 1).join('/'));
+  }
+  return matches.size === 1 ? [...matches][0] : null;
 }
 
 export function resolveDistrictRoute(paths: string[], district: string): string | null {
