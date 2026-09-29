@@ -46,6 +46,10 @@ export class ImotClient extends BaseImotClient {
       if (row.pricePerM2 == null) {
         row.pricePerM2 = firstNumber(text, /([0-9][0-9\s.,]*)\s*(?:€|EUR)\s*\/?\s*(?:кв\.?\s*м|m²|m2|м²|м2)/i);
       }
+      if (!row.constructionType) {
+        const construction = firstMatch(text, /(тухла|панел|епк|гредоред|ново строителство)/i);
+        row.constructionType = construction ? construction.toLocaleLowerCase('bg-BG') : null;
+      }
     }
     return rows;
   }
@@ -83,6 +87,10 @@ function numeric(value: string) {
 function firstNumber(text: string, re: RegExp) {
   const match = text.match(re);
   return match ? numeric(match[1]) : null;
+}
+
+function firstMatch(text: string, re: RegExp) {
+  return text.match(re)?.[1] ?? null;
 }
 
 function findCard($: cheerio.CheerioAPI, anchor: cheerio.Cheerio<any>) {
