@@ -11,6 +11,7 @@ import {
 
 const BASE = 'https://www.imot.bg';
 const MAX_PAGES = 50;
+const DETAIL_CONCURRENCY = 5;
 
 const TYPE_SLUG: Partial<Record<PropertyType, string>> = {
   studio: 'ednostaen',
@@ -41,8 +42,9 @@ export class ImotClient {
   constructor(
     private readonly cache?: ListingCache,
     private readonly fetchImpl: typeof fetch = fetch,
+    taxonomy?: ImotTaxonomyResolver,
   ) {
-    this.taxonomy = new ImotTaxonomyResolver(fetchImpl);
+    this.taxonomy = taxonomy ?? new ImotTaxonomyResolver(fetchImpl);
   }
 
   async search(input: PropertySearchRequest): Promise<PropertySearchResult> {
@@ -70,7 +72,9 @@ export class ImotClient {
     const listings: PropertyListing[] = [];
     let detailsFetched = 0;
 
-    for (const summary of summaries.values()) {
+    // Detail pages are independent. Fetch a small bounded batch in parallel instead of
+    // serially walking 100+ listings and blowing the PWA request timeout.
+    const resolved = await mapLimit([...summaries.values()], DETAIL_CONCURRENCY, async summary => {
       try {
         let listing = await this.cache?.get(summary.listingId) ?? null;
         if (!listing || this.summaryChanged(summary, listing)) {
@@ -78,11 +82,14 @@ export class ImotClient {
           detailsFetched++;
           await this.cache?.put(listing);
         }
-        if (!this.detailMatchesDeterministicConstraints(listing, request)) continue;
-        listings.push(listing);
+        return this.detailMatchesDeterministicConstraints(listing, request) ? listing : null;
       } catch {
         rejected++;
+        return null;
       }
+    });
+    for (const listing of resolved) {
+      if (listing) listings.push(listing);
     }
 
     return {
@@ -142,6 +149,7 @@ export class ImotClient {
       const price = firstNumber(text, /([0-9][0-9\s.,]*)\s*(?:€|EUR)\b/i);
       const area = firstNumber(text, /([0-9]+(?:[.,][0-9]+)?)\s*(?:кв\.?\s*м|m²|m2|м²|м2)/i);
       const ppm = firstNumber(text, /([0-9][0-9\s.,]*)\s*(?:€|EUR)\s*\/?\s*(?:кв\.?\s*м|m²|m2|м²|м2)/i);
+      const constructionType = firstMatch(text, /(тухла|панел|епк|гредоред|ново строителство)/i);
       const img = card.find('img').first();
       const thumbnail = absoluteHttpUrl(img.attr('src') || img.attr('data-src'), pageUrl);
 
@@ -154,6 +162,7 @@ export class ImotClient {
         currency: price == null ? null : 'EUR',
         areaM2: area,
         pricePerM2: ppm,
+        constructionType: constructionType ? constructionType.toLocaleLowerCase('bg-BG') : null,
         locationText: inferLocationText(text),
         thumbnailUrl: thumbnail,
         fetchedAt: new Date().toISOString(),
@@ -234,6 +243,17 @@ export class ImotClient {
     if (request.price?.max != null && item.price != null && item.price > request.price.max) return false;
     if (request.area?.min != null && item.areaM2 != null && item.areaM2 < request.area.min) return false;
     if (request.area?.max != null && item.areaM2 != null && item.areaM2 > request.area.max) return false;
+
+    // imot.bg exposes construction type in result cards. Apply that cheap source fact before
+    // downloading every detail page (e.g. "тухла" in a Sofia neighbourhood search).
+    const constructionConstraints = [
+      ...request.requiredFeatures,
+      ...(request.freeTextConstraints ?? []),
+    ].filter(isConstructionConstraint);
+    if (constructionConstraints.length && item.constructionType) {
+      const source = normalize(item.constructionType);
+      if (!constructionConstraints.every(value => containsConstraint(source, value))) return false;
+    }
     return true;
   }
 
@@ -243,7 +263,7 @@ export class ImotClient {
     if (request.floor?.max != null && item.floor != null && item.floor > request.floor.max) return false;
     if (item.floor != null && request.floor?.exclude?.includes(item.floor)) return false;
 
-    const sourceText = normalize(`${item.title ?? ''} ${item.description ?? ''}`);
+    const sourceText = normalize(`${item.title ?? ''} ${item.locationText ?? ''} ${item.constructionType ?? ''} ${item.description ?? ''}`);
     for (const excluded of request.excludedFeatures) {
       if (containsConstraint(sourceText, excluded)) return false;
     }
@@ -371,6 +391,28 @@ function containsConstraint(normalizedSourceText: string, rawConstraint: string)
   const tokens = normalize(rawConstraint).split(' ').filter(t => t.length >= 3);
   if (!tokens.length) return true;
   return tokens.every(token => normalizedSourceText.includes(token));
+}
+
+function isConstructionConstraint(value: string) {
+  const normalized = normalize(value);
+  return ['тухла','панел','епк','гредоред','ново строителство'].some(type => normalized === type);
+}
+
+async function mapLimit<T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>): Promise<R[]> {
+  if (!items.length) return [];
+  const output = new Array<R>(items.length);
+  let next = 0;
+
+  async function run() {
+    while (true) {
+      const index = next++;
+      if (index >= items.length) return;
+      output[index] = await worker(items[index]);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => run()));
+  return output;
 }
 
 function validateListing(item: PropertyListing) {
