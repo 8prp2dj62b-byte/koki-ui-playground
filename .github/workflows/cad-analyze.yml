@@ -1,0 +1,32 @@
+name: CAD DWG Analyze
+
+on:
+  push:
+    branches:
+      - cad-dwg-analysis
+    paths:
+      - '.github/workflows/cad-analyze.yml'
+      - 'tools/cad-analyze.mjs'
+      - 'package.json'
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm install --no-audit --no-fund
+      - name: Download DWG
+        run: curl -L --fail --retry 3 -o input.dwg 'https://at.adobe.com/xvBYzpWVu1Glq0cC'
+      - name: Parse DWG
+        run: node tools/cad-analyze.mjs input.dwg cad-summary.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cad-summary
+          path: cad-summary.json
+          if-no-files-found: error
+          retention-days: 1
