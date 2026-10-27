@@ -17,6 +17,9 @@ jobs:
         import subprocess
         checks={
           "koki-root":"https://koki.tonyshodling.eu/",
+          "koki-pwa-start":"https://koki.tonyshodling.eu/koki-command-center",
+          "koki-pwa-start-slash":"https://koki.tonyshodling.eu/koki-command-center/",
+          "koki-v3-raw":"https://koki.tonyshodling.eu/functions/v1/koki-push-sw?asset=manifest-v3&v=3",
           "koki-direct-root":"https://aqhdzfsspmuvadnlchvj.supabase.co/functions/v1/koki-command-center",
           "koki-manifest":"https://koki.tonyshodling.eu/functions/v1/koki-push-sw?asset=manifest-v4&v=4",
           "koki-light":"https://koki.tonyshodling.eu/functions/v1/koki-push-sw?asset=holding-icon-light-180&v=4",
