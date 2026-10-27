@@ -17,6 +17,7 @@ jobs:
         import subprocess
         checks={
           "koki-root":"https://koki.tonyshodling.eu/",
+          "koki-direct-root":"https://aqhdzfsspmuvadnlchvj.supabase.co/functions/v1/koki-command-center",
           "koki-manifest":"https://koki.tonyshodling.eu/functions/v1/koki-push-sw?asset=manifest-v4&v=4",
           "koki-light":"https://koki.tonyshodling.eu/functions/v1/koki-push-sw?asset=holding-icon-light-180&v=4",
           "koki-adaptive":"https://koki.tonyshodling.eu/functions/v1/koki-push-sw?asset=holding-icon-adaptive-v4&v=4",
@@ -45,4 +46,15 @@ jobs:
           x=subprocess.run(['curl','-k','-sS','-L','--max-time','16','--compressed','-o','/tmp/iconresponse','-w','%{http_code};%{content_type};%{size_download}',u],capture_output=True,text=True)
           with open('/tmp/iconresponse','rb') as f:b=f.read(200000)
           print("CHECK",n,"HTTP",x.stdout.strip(),"err",x.stderr[:100], "preview",b[:450].decode(errors='replace').replace('\n',' ') if 'root' in n or 'manifest' in n else b[:30].hex())
+          if 'root' in n:
+            from html.parser import HTMLParser
+            class P(HTMLParser):
+              def __init__(self): super().__init__();self.links=[];self.meta=[];self.scripts=[]
+              def handle_starttag(self,t,a):
+                z=dict(a)
+                if t=='link' and any(k in z.get('rel','') for k in ['icon','manifest']):self.links.append(z)
+                if t=='script' and z.get('id','').startswith(('koki','holding')):self.scripts.append(z.get('id'))
+                if t=='meta' and z.get('name')=='theme-color':self.meta.append(z)
+            p=P();p.feed(b.decode(errors='replace'))
+            print('LINKS',n,p.links,'METAS',p.meta,'SCRIPTS',p.scripts,'v4',b'kokiPwaIconGatewayV4' in b)
         PY
