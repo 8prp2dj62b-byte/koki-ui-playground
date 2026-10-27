@@ -1,0 +1,36 @@
+name: Verify holding icon rollouts
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/holding-icons-live-check.yml']
+permissions: {contents: read}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - name: Inspect public and preview assets
+      shell: bash
+      run: |
+        python3 - <<'PY'
+        import subprocess
+        checks={
+          "koki-root":"https://koki.tonyshodling.eu/",
+          "koki-manifest":"https://koki.tonyshodling.eu/functions/v1/koki-push-sw?asset=manifest-v4&v=4",
+          "koki-light":"https://koki.tonyshodling.eu/functions/v1/koki-push-sw?asset=holding-icon-light-180&v=4",
+          "koki-adaptive":"https://koki.tonyshodling.eu/functions/v1/koki-push-sw?asset=holding-icon-adaptive-v4&v=4",
+          "signing-preview-root":"https://simo-signing-jwsbztp9j-9bcbpk7d9s-3130s-projects.vercel.app/",
+          "signing-preview-light":"https://simo-signing-jwsbztp9j-9bcbpk7d9s-3130s-projects.vercel.app/__holding/light-180.png",
+          "signing-preview-manifest":"https://simo-signing-jwsbztp9j-9bcbpk7d9s-3130s-projects.vercel.app/manifest.webmanifest",
+          "token-preview-root":"https://simo-token-fxn752h1p-9bcbpk7d9s-3130s-projects.vercel.app/",
+          "token-preview-light":"https://simo-token-fxn752h1p-9bcbpk7d9s-3130s-projects.vercel.app/__holding/light-180.png",
+          "token-preview-manifest":"https://simo-token-fxn752h1p-9bcbpk7d9s-3130s-projects.vercel.app/manifest.webmanifest",
+          "signing-prod-root":"https://simo-signing.vercel.app/",
+          "token-prod-root":"https://simo-token.vercel.app/",
+        }
+        for n,u in checks.items():
+          x=subprocess.run(['curl','-k','-sS','-L','--max-time','16','--compressed','-o','/tmp/iconresponse','-w','%{http_code};%{content_type};%{size_download}',u],capture_output=True,text=True)
+          with open('/tmp/iconresponse','rb') as f:b=f.read(200000)
+          print("CHECK",n,"HTTP",x.stdout.strip(),"err",x.stderr[:100], "preview",b[:450].decode(errors='replace').replace('\n',' ') if 'root' in n or 'manifest' in n else b[:30].hex())
+        PY
