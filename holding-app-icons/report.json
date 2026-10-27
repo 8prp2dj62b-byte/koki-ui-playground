@@ -1,0 +1,128 @@
+{
+  "koki": {
+    "original_dimensions": [
+      180,
+      180
+    ],
+    "corner_rgb": [
+      20,
+      24,
+      34
+    ],
+    "variants": [
+      {
+        "file": "holding-app-icons/koki/light-180.png",
+        "bytes": 4205
+      },
+      {
+        "file": "holding-app-icons/koki/dark-180.png",
+        "bytes": 5491
+      },
+      {
+        "file": "holding-app-icons/koki/light-192.png",
+        "bytes": 5639
+      },
+      {
+        "file": "holding-app-icons/koki/dark-192.png",
+        "bytes": 6544
+      },
+      {
+        "file": "holding-app-icons/koki/light-512.png",
+        "bytes": 27984
+      },
+      {
+        "file": "holding-app-icons/koki/dark-512.png",
+        "bytes": 28621
+      },
+      {
+        "file": "holding-app-icons/koki/monochrome-512.png",
+        "bytes": 7314
+      }
+    ],
+    "adaptive_svg_bytes": 75809
+  },
+  "simo-signing": {
+    "original_dimensions": [
+      512,
+      512
+    ],
+    "corner_rgb": [
+      20,
+      24,
+      33
+    ],
+    "variants": [
+      {
+        "file": "holding-app-icons/simo-signing/light-180.png",
+        "bytes": 8371
+      },
+      {
+        "file": "holding-app-icons/simo-signing/dark-180.png",
+        "bytes": 9954
+      },
+      {
+        "file": "holding-app-icons/simo-signing/light-192.png",
+        "bytes": 8964
+      },
+      {
+        "file": "holding-app-icons/simo-signing/dark-192.png",
+        "bytes": 10652
+      },
+      {
+        "file": "holding-app-icons/simo-signing/light-512.png",
+        "bytes": 16661
+      },
+      {
+        "file": "holding-app-icons/simo-signing/dark-512.png",
+        "bytes": 17677
+      },
+      {
+        "file": "holding-app-icons/simo-signing/monochrome-512.png",
+        "bytes": 5312
+      }
+    ],
+    "adaptive_svg_bytes": 46121
+  },
+  "simo-token": {
+    "original_dimensions": [
+      512,
+      512
+    ],
+    "corner_rgb": [
+      20,
+      24,
+      33
+    ],
+    "variants": [
+      {
+        "file": "holding-app-icons/simo-token/light-180.png",
+        "bytes": 8158
+      },
+      {
+        "file": "holding-app-icons/simo-token/dark-180.png",
+        "bytes": 9966
+      },
+      {
+        "file": "holding-app-icons/simo-token/light-192.png",
+        "bytes": 8755
+      },
+      {
+        "file": "holding-app-icons/simo-token/dark-192.png",
+        "bytes": 10626
+      },
+      {
+        "file": "holding-app-icons/simo-token/light-512.png",
+        "bytes": 17097
+      },
+      {
+        "file": "holding-app-icons/simo-token/dark-512.png",
+        "bytes": 18110
+      },
+      {
+        "file": "holding-app-icons/simo-token/monochrome-512.png",
+        "bytes": 6094
+      }
+    ],
+    "adaptive_svg_bytes": 47277
+  }
+}
