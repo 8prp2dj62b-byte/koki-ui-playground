@@ -1,0 +1,76 @@
+name: Prepare holding brand icon variants
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/holding-app-icons-build.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  icons:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install raster image utility
+        run: python3 -m pip install --quiet --break-system-packages Pillow
+      - name: Generate consistent app icon appearances from live originals
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from PIL import Image
+          from pathlib import Path
+          import requests, io, base64, json, math
+          from collections import Counter
+          SOURCES={
+             'koki':'https://koki.tonyshodling.eu/functions/v1/koki-push-sw?asset=koki-icon-reference-v3&v=3',
+             'simo-signing':'https://simo-signing.vercel.app/__simo/icon-512.png?v=5',
+             'simo-token':'https://simo-token.vercel.app/__token/icon-512.png?v=5'
+          }
+          LIGHT=(247,249,253)
+          result={}
+          for name,url in SOURCES.items():
+            response=requests.get(url,timeout=22)
+            response.raise_for_status()
+            im=Image.open(io.BytesIO(response.content)).convert('RGB')
+            assert im.width==im.height and im.width>=180,(name,im.size)
+            base=im.getpixel((0,0))
+            outdir=Path('holding-app-icons')/name
+            outdir.mkdir(parents=True,exist_ok=True)
+            result[name]={'original_dimensions':list(im.size),'corner_rgb':base,'variants':[]}
+            base512=im.resize((512,512),Image.Resampling.LANCZOS)
+            for size in (180,192,512):
+              dark=base512.resize((size,size),Image.Resampling.LANCZOS)
+              # Preserve the precise original logo and colors; replace only near-background pixels.
+              # A soft transition retains anti-aliasing around the brand shape.
+              pixels=[]
+              matte=[]
+              for p in dark.getdata():
+                diff=max(abs(p[j]-base[j]) for j in range(3))
+                alpha=max(0.,min(1.,(diff-12)/42))
+                pixels.append(tuple(round(alpha*p[j]+(1-alpha)*LIGHT[j]) for j in range(3)))
+                matte.append((0,0,0,round(alpha*255)))
+              light=Image.new('RGB',(size,size));light.putdata(pixels)
+              mono=Image.new('RGBA',(size,size));mono.putdata(matte)
+              for theme,asset in [('light',light),('dark',dark),('monochrome',mono)]:
+                if theme=='monochrome' and size!=512:continue
+                path=outdir/f'{theme}-{size}.png'
+                asset.save(path,optimize=True)
+                result[name]['variants'].append({'file':str(path),'bytes':path.stat().st_size})
+            lightdata=base64.b64encode((outdir/'light-512.png').read_bytes()).decode()
+            darkdata=base64.b64encode((outdir/'dark-512.png').read_bytes()).decode()
+            svg=f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><style>.dark{{display:none}}@media (prefers-color-scheme: dark){{.light{{display:none}}.dark{{display:inline}}}}</style><image class="light" width="512" height="512" href="data:image/png;base64,{lightdata}"/><image class="dark" width="512" height="512" href="data:image/png;base64,{darkdata}"/></svg>"""
+            (outdir/'adaptive.svg').write_text(svg)
+            result[name]['adaptive_svg_bytes']=len(svg)
+          Path('holding-app-icons/report.json').write_text(json.dumps(result,indent=2,ensure_ascii=False)+'\n')
+          print('GENERATED',json.dumps(result,ensure_ascii=False))
+          PY
+      - name: Commit generated artwork
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add holding-app-icons/
+          if ! git diff --cached --quiet; then
+            git commit -m 'Build holding PWA icon light/dark variants from original production logos'
+            git push origin HEAD:main
+          fi
