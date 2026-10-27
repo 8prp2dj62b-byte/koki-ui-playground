@@ -1,0 +1,58 @@
+name: Holding app icon source inspection
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/holding-icon-inspection.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Inspect public icon and manifest metadata
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import subprocess, json, re, urllib.parse
+          from html.parser import HTMLParser
+          urls={
+            'koki':'https://koki.tonyshodling.eu/',
+            'simo-signing':'https://simo-signing.vercel.app/',
+            'simo-token':'https://simo-token.vercel.app/',
+            'signing-upstream':'https://signing.158-180-29-216.sslip.io/',
+            'token-upstream':'https://token.158-180-29-216.sslip.io/',
+          }
+          class Parser(HTMLParser):
+            def __init__(self): super().__init__();self.links=[];self.metas=[]
+            def handle_starttag(self,tag,attrs):
+              d=dict(attrs)
+              if tag=='link' and any(x in d.get('rel','') for x in ('icon','manifest')):self.links.append(d)
+              if tag=='meta' and d.get('name','') in ['theme-color','apple-mobile-web-app-capable','apple-mobile-web-app-title']:self.metas.append(d)
+          def fetch(url):
+            r=subprocess.run(['curl','-k','-L','-sS','--max-time','12','-w','\\n__HTTP__%{http_code}__TYPE__%{content_type}__END__','-A','Mozilla/5.0 (compatible; HoldingIconAudit/1.0)',url],capture_output=True)
+            dat=r.stdout;match=re.search(rb'\\n__HTTP__(\\d+)__TYPE__(.*?)__END__$',dat,re.S)
+            status=int(match.group(1)) if match else 0
+            ty=match.group(2).decode(errors='replace') if match else ''
+            body=dat[:match.start()] if match else dat
+            return status,ty,body,r.stderr.decode(errors='replace')[:150]
+          for app,url in urls.items():
+            status,ty,body,err=fetch(url)
+            print(f'=== {app} status={status} type={ty} bytes={len(body)} error={err!r} ===')
+            if status!=200 or 'html' not in ty:continue
+            p=Parser();p.feed(body[:200000].decode(errors='replace'))
+            print('TITLE',re.findall(r'<title[^>]*>(.*?)</title>',body[:200000].decode(errors='replace'),re.I|re.S)[:1])
+            print('LINKS',json.dumps(p.links[:16],ensure_ascii=False))
+            print('METAS',json.dumps(p.metas[:8],ensure_ascii=False))
+            for l in p.links:
+              href=l.get('href','')
+              if not href or ('icon' not in l.get('rel','') and 'manifest' not in l.get('rel','')):continue
+              target=urllib.parse.urljoin(url,href)
+              if urllib.parse.urlparse(target).hostname not in (urllib.parse.urlparse(url).hostname,):continue
+              s,t,b,e=fetch(target)
+              print('ASSET',target, 'status',s,'type',t,'bytes',len(b),'prefix',b[:90].decode(errors='replace').replace('\\n',' '))
+              if 'manifest' in l.get('rel','') and s==200:
+                try:print('MANIFEST',json.dumps(json.loads(b),ensure_ascii=False)[:2200])
+                except Exception as ex:print('MANIFEST_BAD',str(ex))
+          PY
