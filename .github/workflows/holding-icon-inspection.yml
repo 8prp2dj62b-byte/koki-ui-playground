@@ -31,11 +31,17 @@ jobs:
               if tag=='link' and any(x in d.get('rel','') for x in ('icon','manifest')):self.links.append(d)
               if tag=='meta' and d.get('name','') in ['theme-color','apple-mobile-web-app-capable','apple-mobile-web-app-title']:self.metas.append(d)
           def fetch(url):
-            r=subprocess.run(['curl','-k','-L','-sS','--max-time','12','-w','\\n__HTTP__%{http_code}__TYPE__%{content_type}__END__','-A','Mozilla/5.0 (compatible; HoldingIconAudit/1.0)',url],capture_output=True)
-            dat=r.stdout;match=re.search(rb'\\n__HTTP__(\\d+)__TYPE__(.*?)__END__$',dat,re.S)
-            status=int(match.group(1)) if match else 0
-            ty=match.group(2).decode(errors='replace') if match else ''
-            body=dat[:match.start()] if match else dat
+            import tempfile, os
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+              filename=tmp.name
+            r=subprocess.run(['curl','-k','-L','-sS','--max-time','12','-o',filename,'-w','%{http_code}|%{content_type}','-A','Mozilla/5.0 (compatible; HoldingIconAudit/1.0)',url],capture_output=True)
+            try:
+              with open(filename,'rb') as fh: body=fh.read(2000000)
+            finally:
+              os.unlink(filename)
+            vals=r.stdout.decode(errors='replace').split('|',1)
+            status=int(vals[0]) if vals and vals[0].isdigit() else 0
+            ty=vals[1] if len(vals)>1 else ''
             return status,ty,body,r.stderr.decode(errors='replace')[:150]
           for app,url in urls.items():
             status,ty,body,err=fetch(url)
