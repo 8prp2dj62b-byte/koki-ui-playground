@@ -75,6 +75,10 @@ This file is the source-of-truth registry for approved/frozen design-system laye
    - Frozen blob SHA: `483ddc71176d69e03661a209a247d7110a6f3ec7`
    - Contract: one KOKI Core Design Language with platform adapters only. iOS PWA uses safe-area handling, ≥44px targets and restrained translucency only in persistent app chrome when supported; Android PWA uses ≥48px targets and solid chrome; Desktop/Web uses the frozen sidebar/rail, pointer/hover and keyboard affordances. Platform expression may adapt chrome, safe areas, target size, input model and responsive composition, but never business meaning, navigation destinations, semantic color roles, component anatomy or information architecture. No fake UIKit, fake Material, fake native controls or platform-specific product forks.
 
+## Approved amendment · 2026-10-28
+
+User-approved holding-wide navigation rule: page titles, back actions and local navigation remain stationary below global chrome. Only the content region scrolls; no content may visibly pass behind or above the title/navigation. Titles do not collapse or disappear on scroll. Media lists scroll in a clipped region below the stationary player. Solid theme surfaces, safe areas, keyboard access and long-title wrapping are required. Explicit fullscreen media is the only opt-in alternate chrome. This amendment updates layer 6 (Navigation Components) and its consumption in layer 12 (Platform Expression); the normative detail and acceptance checks are in `components-navigation.html#page-fixed-context`.
+
 ## Governance
 
 - Higher layers consume frozen tokens and components; they do not redefine them.
